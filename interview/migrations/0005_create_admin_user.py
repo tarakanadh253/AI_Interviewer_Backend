@@ -22,7 +22,7 @@ def remove_admin_user(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('interview', '0002_change_to_username_password_auth'),
+        ('interview', '0004_add_source_type_and_reference_links'),
     ]
 
     operations = [
