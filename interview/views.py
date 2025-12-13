@@ -29,7 +29,7 @@ class DevAdminPermission(BasePermission):
         if settings.DEBUG:
             return True
         # In production, require admin authentication
-        return request.user and request.user.is_authenticated and request.user.is_staff
+        return request.user and request.user.is_authenticated and (getattr(request.user, 'is_staff', False) or getattr(request.user, 'access_type', '') == 'FULL')
 
 
 class UserProfileViewSet(viewsets.ModelViewSet):
