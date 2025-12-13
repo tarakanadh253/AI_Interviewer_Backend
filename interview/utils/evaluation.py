@@ -10,32 +10,37 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Import NLP libraries - REQUIRED for proper evaluation
+# Lazy loading imports to prevent immediate crash on startup
 try:
     from sentence_transformers import SentenceTransformer
     from sklearn.metrics.pairwise import cosine_similarity
     import numpy as np
     NLP_AVAILABLE = True
-    try:
-        # Load model (use a lightweight model for better performance)
-        # all-MiniLM-L6-v2 is a good balance between accuracy and speed
-        logger.info("Loading NLP model 'all-MiniLM-L6-v2'...")
-        _nlp_model = SentenceTransformer('all-MiniLM-L6-v2')
-        logger.info("NLP model 'all-MiniLM-L6-v2' loaded successfully")
-        
-        # Test the model with a simple example to ensure it works
-        test_embeddings = _nlp_model.encode(["test"], normalize_embeddings=True)
-        if test_embeddings is None or len(test_embeddings) == 0:
-            raise Exception("Model test encoding failed")
-        logger.info("NLP model verified and ready for use")
-    except Exception as e:
-        logger.error(f"CRITICAL: Could not load NLP model: {e}", exc_info=True)
-        logger.error("Please install required packages: pip install sentence-transformers scikit-learn numpy")
-        raise RuntimeError(f"Failed to load NLP model: {e}. Please ensure all dependencies are installed.") from e
 except ImportError as e:
-    logger.error(f"CRITICAL: NLP libraries not available: {e}", exc_info=True)
-    logger.error("Please install required packages: pip install -r requirements.txt")
-    raise ImportError(f"NLP libraries are required but not available: {e}. Please install: pip install sentence-transformers scikit-learn numpy nltk") from e
+    logger.error(f"NLP libraries not available: {e}")
+    NLP_AVAILABLE = False
+    
+# Global variable to hold the model, but initialized lazily
+_nlp_model = None
+
+def get_model():
+    """Lazily load the NLP model to prevent memory spikes on startup"""
+    global _nlp_model
+    if not NLP_AVAILABLE:
+        raise ImportError("NLP libraries are not available. Please install sentence-transformers.")
+        
+    if _nlp_model is None:
+        try:
+            logger.info("Lazily loading NLP model 'all-MiniLM-L6-v2'...")
+            _nlp_model = SentenceTransformer('all-MiniLM-L6-v2')
+            # Warmup
+            _nlp_model.encode(["test"], normalize_embeddings=True)
+            logger.info("NLP model loaded successfully")
+        except Exception as e:
+            logger.error(f"Failed to load NLP model: {e}")
+            raise
+            
+    return _nlp_model
 
 try:
     import nltk
@@ -197,10 +202,12 @@ def calculate_semantic_similarity(user_answer: str, ideal_answer: str) -> float:
         return 0.0
     
     # Use NLP model if available
-    if NLP_AVAILABLE and _nlp_model is not None:
-        try:
-            # Get embeddings (normalized by default in sentence-transformers)
-            embeddings = _nlp_model.encode([user_answer, ideal_answer], normalize_embeddings=True)
+    try:
+        model = get_model()
+        if NLP_AVAILABLE and model is not None:
+            try:
+                # Get embeddings (normalized by default in sentence-transformers)
+                embeddings = model.encode([user_answer, ideal_answer], normalize_embeddings=True)
             
             # Calculate cosine similarity
             # For normalized embeddings, cosine similarity is already in range [0, 1]
