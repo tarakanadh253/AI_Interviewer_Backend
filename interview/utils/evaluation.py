@@ -11,14 +11,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Lazy loading imports to prevent immediate crash on startup
-try:
-    from sentence_transformers import SentenceTransformer
-    from sklearn.metrics.pairwise import cosine_similarity
-    import numpy as np
-    NLP_AVAILABLE = True
-except ImportError as e:
-    logger.error(f"NLP libraries not available: {e}")
-    NLP_AVAILABLE = False
+# Lazy loading imports to prevent immediate crash on startup
+NLP_AVAILABLE = True # We assume it is available and let the lazy import fail if not
     
 # Global variable to hold the model, but initialized lazily
 _nlp_model = None
@@ -26,16 +20,20 @@ _nlp_model = None
 def get_model():
     """Lazily load the NLP model to prevent memory spikes on startup"""
     global _nlp_model
-    if not NLP_AVAILABLE:
-        raise ImportError("NLP libraries are not available. Please install sentence-transformers.")
-        
+    global NLP_AVAILABLE
+
     if _nlp_model is None:
         try:
             logger.info("Lazily loading NLP model 'all-MiniLM-L6-v2'...")
+            from sentence_transformers import SentenceTransformer
             _nlp_model = SentenceTransformer('all-MiniLM-L6-v2')
             # Warmup
             _nlp_model.encode(["test"], normalize_embeddings=True)
             logger.info("NLP model loaded successfully")
+        except ImportError as e:
+            logger.error(f"NLP libraries not available: {e}")
+            NLP_AVAILABLE = False
+            raise 
         except Exception as e:
             logger.error(f"Failed to load NLP model: {e}")
             raise
@@ -210,6 +208,7 @@ def calculate_semantic_similarity(user_answer: str, ideal_answer: str) -> float:
             
             # Calculate cosine similarity
             # For normalized embeddings, cosine similarity is already in range [0, 1]
+            from sklearn.metrics.pairwise import cosine_similarity
             similarity = cosine_similarity([embeddings[0]], [embeddings[1]])[0][0]
             
             # Apply brevity penalty
