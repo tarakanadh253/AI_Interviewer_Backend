@@ -76,6 +76,16 @@ class UserProfileViewSet(viewsets.ModelViewSet):
                 {'error': 'Invalid username or password'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
+            
+        # Log the user in to establish a Django session
+        from django.contrib.auth import login
+        from django.contrib.auth.models import User
+        
+        # Get or create necessary standard auth user to enable session
+        auth_user, _ = User.objects.get_or_create(username=username)
+        # We need to set the backend manually to bypass authenticate() since we checked password on UserProfile
+        auth_user.backend = 'django.contrib.auth.backends.ModelBackend'
+        login(request, auth_user)
         
         return Response(
             UserProfileSerializer(user).data,
