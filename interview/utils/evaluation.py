@@ -205,13 +205,12 @@ def calculate_semantic_similarity(user_answer: str, ideal_answer: str) -> float:
     try:
         model = get_model()
         if NLP_AVAILABLE and model is not None:
-            try:
                 # Get embeddings (normalized by default in sentence-transformers)
                 embeddings = model.encode([user_answer, ideal_answer], normalize_embeddings=True)
             
-            # Calculate cosine similarity
-            # For normalized embeddings, cosine similarity is already in range [0, 1]
-            similarity = cosine_similarity([embeddings[0]], [embeddings[1]])[0][0]
+                # Calculate cosine similarity
+                # For normalized embeddings, cosine similarity is already in range [0, 1]
+                similarity = cosine_similarity([embeddings[0]], [embeddings[1]])[0][0]
             
             # Apply brevity penalty
             # If the user's answer is significantly shorter than the ideal answer, penalize the score
