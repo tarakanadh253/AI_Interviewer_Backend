@@ -777,14 +777,20 @@ class AdminUserViewSet(viewsets.ModelViewSet):
         return UserProfileSerializer
     
     def update(self, request, *args, **kwargs):
-        """Update user - allows updating is_active, access_type, has_used_trial, etc."""
+        """Update user - allows updating is_active, access_type, has_used_trial, etc. and password"""
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
         
         # Only allow updating specific fields for security
-        allowed_fields = ['is_active', 'access_type', 'has_used_trial', 'email', 'name']
+        allowed_fields = ['is_active', 'access_type', 'has_used_trial', 'email', 'name', 'password']
         data = {k: v for k, v in request.data.items() if k in allowed_fields}
         
+        # Handle password update separately securely
+        password = data.pop('password', None)
+        if password:
+            instance.set_password(password)
+            instance.save()
+            
         serializer = self.get_serializer(instance, data=data, partial=partial)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
