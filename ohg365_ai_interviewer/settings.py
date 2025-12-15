@@ -142,10 +142,24 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
+    # Use SessionAuthentication for browser session (requires cookies)
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework.authentication.BasicAuthentication',
+    ],
 }
 
 # CORS configuration
-CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',')
+CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000,https://ai-interviewer-backend-f9t5.onrender.com').split(',')
+
+CSRF_TRUSTED_ORIGINS = ['https://ai-interviewer-backend-f9t5.onrender.com', 'http://localhost:3000', 'http://127.0.0.1:3000']
+
+# Cookie settings for cross-site authentication
+# Set these to allow cookies to be sent across domains (frontend on separate domain)
+SESSION_COOKIE_SAMESITE = 'None'
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SAMESITE = 'None'
+CSRF_COOKIE_SECURE = True
 
 CORS_ALLOW_CREDENTIALS = True
 
