@@ -8,6 +8,7 @@ import json
 from typing import Dict, List, Tuple
 import logging
 
+import os
 logger = logging.getLogger(__name__)
 
 # Lazy loading imports to prevent immediate crash on startup
@@ -24,6 +25,16 @@ def get_model():
 
     if _nlp_model is None:
         try:
+            # On Render Free Tier, heavy ML models often cause OOM (Out Of Memory) kills.
+            # We default to disabling the heavy model on Render to ensure reliability.
+            is_on_render = os.environ.get('RENDER')
+            enable_heavy_nlp = os.environ.get('ENABLE_HEAVY_NLP', 'False').lower() == 'true'
+
+            if is_on_render and not enable_heavy_nlp:
+                logger.warning("Running on Render: Heavy NLP model disabled to prevent OOM. Using keyword fallback.")
+                NLP_AVAILABLE = False
+                return None
+
             logger.info("Lazily loading NLP model 'all-MiniLM-L6-v2'...")
             from sentence_transformers import SentenceTransformer
             _nlp_model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -36,7 +47,7 @@ def get_model():
             raise 
         except Exception as e:
             logger.error(f"Failed to load NLP model: {e}")
-            raise
+            NLP_AVAILABLE = False # Don't raise, just fallback
             
     return _nlp_model
 
