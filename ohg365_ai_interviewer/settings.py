@@ -150,16 +150,25 @@ REST_FRAMEWORK = {
 }
 
 # CORS configuration
-CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000,https://ai-interviewer-backend-f9t5.onrender.com').split(',')
+CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000,https://ai-interviewer-backend-f9t5.onrender.com,https://ai-interviewer-ohg.vercel.app').split(',')
 
-CSRF_TRUSTED_ORIGINS = ['https://ai-interviewer-backend-f9t5.onrender.com', 'http://localhost:3000', 'http://127.0.0.1:3000']
+CSRF_TRUSTED_ORIGINS = ['https://ai-interviewer-backend-f9t5.onrender.com', 'http://localhost:3000', 'http://127.0.0.1:3000', 'https://ai-interviewer-ohg.vercel.app']
 
 # Cookie settings for cross-site authentication
-# Set these to allow cookies to be sent across domains (frontend on separate domain)
-SESSION_COOKIE_SAMESITE = 'None'
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SAMESITE = 'None'
-CSRF_COOKIE_SECURE = True
+# If running on Render, we need Secure and SameSite=None for cross-origin requests
+IS_ON_RENDER = os.environ.get('RENDER') or False
+
+if IS_ON_RENDER:
+    SESSION_COOKIE_SAMESITE = 'None'
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SAMESITE = 'None'
+    CSRF_COOKIE_SECURE = True
+else:
+    # Local development settings (HTTP)
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SAMESITE = 'Lax'
+    CSRF_COOKIE_SECURE = False
 
 CORS_ALLOW_CREDENTIALS = True
 
