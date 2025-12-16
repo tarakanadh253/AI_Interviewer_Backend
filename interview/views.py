@@ -29,7 +29,22 @@ class DevAdminPermission(BasePermission):
         if settings.DEBUG:
             return True
         # In production, require admin authentication
-        return request.user and request.user.is_authenticated and (getattr(request.user, 'is_staff', False) or getattr(request.user, 'access_type', '') == 'FULL')
+        if not (request.user and request.user.is_authenticated):
+            return False
+            
+        # Check standard Django staff status
+        if getattr(request.user, 'is_staff', False):
+            return True
+            
+        # Check UserProfile access_type
+        try:
+            # Only import here if needed to avoid potential circular imports, 
+            # though it should be fine since models are imported at top
+            from .models import UserProfile 
+            user_profile = UserProfile.objects.get(username=request.user.username)
+            return user_profile.access_type == 'FULL'
+        except UserProfile.DoesNotExist:
+            return False
 
 
 class UserProfileViewSet(viewsets.ModelViewSet):
