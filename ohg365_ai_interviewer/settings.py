@@ -144,7 +144,7 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 20,
     # Use SessionAuthentication for browser session (requires cookies)
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
+        'interview.authentication.CsrfExemptSessionAuthentication',
         'rest_framework.authentication.BasicAuthentication',
     ],
 }
