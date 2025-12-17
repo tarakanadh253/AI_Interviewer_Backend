@@ -1,0 +1,179 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 240 30% 8%;
+    --foreground: 180 20% 95%;
+
+    --card: 240 25% 12%;
+    --card-foreground: 180 20% 95%;
+
+    --popover: 240 28% 10%;
+    --popover-foreground: 180 20% 95%;
+
+    --primary: 0 0% 100%;
+    --primary-foreground: 240 30% 8%;
+
+    --secondary: 330 100% 50%;
+    --secondary-foreground: 240 30% 8%;
+
+    --muted: 240 20% 20%;
+    --muted-foreground: 180 10% 60%;
+
+    --accent: 280 80% 60%;
+    --accent-foreground: 180 20% 95%;
+
+    --destructive: 0 85% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 240 20% 20%;
+    --input: 240 20% 18%;
+    --ring: 0 0% 100%;
+
+    --radius: 1rem;
+
+    /* Custom OHG365 Design Tokens */
+    --neon-cyan: 0 0% 100%;
+    --neon-pink: 330 100% 50%;
+    --neon-purple: 280 80% 60%;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(0 0% 100% / 0.9), hsl(240 20% 80% / 0.8));
+    --gradient-secondary: linear-gradient(135deg, hsl(330 100% 50% / 0.6), hsl(280 80% 60% / 0.6));
+    --gradient-background: linear-gradient(180deg, hsl(240 30% 8%), hsl(240 35% 6%));
+
+    /* Glows */
+    --glow-cyan: 0 0 20px hsl(0 0% 100% / 0.3), 0 0 40px hsl(0 0% 100% / 0.1);
+    --glow-pink: 0 0 20px hsl(330 100% 50% / 0.5), 0 0 40px hsl(330 100% 50% / 0.3);
+    --glow-purple: 0 0 20px hsl(280 80% 60% / 0.5), 0 0 40px hsl(280 80% 60% / 0.3);
+
+    /* Transitions */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    background: var(--gradient-background);
+    background-attachment: fixed;
+  }
+}
+
+@layer utilities {
+  .glow-cyan {
+    box-shadow: var(--glow-cyan);
+  }
+
+  .glow-pink {
+    box-shadow: var(--glow-pink);
+  }
+
+  .glow-purple {
+    box-shadow: var(--glow-purple);
+  }
+
+  .text-gradient-primary {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .text-gradient-secondary {
+    background: var(--gradient-secondary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  @keyframes float {
+
+    0%,
+    100% {
+      transform: translateY(0px);
+    }
+
+    50% {
+      transform: translateY(-20px);
+    }
+  }
+
+  @keyframes pulse-glow {
+
+    0%,
+    100% {
+      box-shadow: 0 0 20px hsl(180 100% 50% / 0.3);
+    }
+
+    50% {
+      box-shadow: 0 0 40px hsl(180 100% 50% / 0.6), 0 0 60px hsl(180 100% 50% / 0.4);
+    }
+  }
+
+  /* Custom Scrollbar - Essential for new UI */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  /* Music Bar Animation */
+  /* Music Bar Animation */
+  .animate-music-bar {
+    animation: music-bar 1.2s ease-in-out infinite;
+  }
+
+  @keyframes music-bar {
+
+    0%,
+    100% {
+      height: 8px;
+      opacity: 0.5;
+    }
+
+    50% {
+      height: 24px;
+      opacity: 1;
+    }
+  }
+}
+
+/* Re-trigger build cleanup */
+
+/* Re-trigger build */
