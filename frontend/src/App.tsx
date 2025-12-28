@@ -9,6 +9,7 @@ import TopicSelection from "./pages/TopicSelection";
 import Interview from "./pages/Interview";
 import Results from "./pages/Results";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminLogin from "./pages/AdminLogin";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -25,7 +26,8 @@ const App = () => (
           <Route path="/topic-selection" element={<TopicSelection />} />
           <Route path="/interview" element={<Interview />} />
           <Route path="/results" element={<Results />} />
-          <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/admin" element={<AdminLogin />} />
+          <Route path="/admin/dashboard" element={<AdminDashboard />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

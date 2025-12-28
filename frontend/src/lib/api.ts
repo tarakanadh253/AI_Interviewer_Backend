@@ -10,14 +10,26 @@ interface UserProfile {
   role: 'ADMIN' | 'USER';
   access_type: 'TRIAL' | 'FULL' | null; // Access type is mostly relevant for USER
   has_used_trial: boolean;
+  plain_password?: string;
   created_at: string;
   updated_at: string;
 }
 
-interface Topic {
+interface Course {
   id: number;
   name: string;
   description: string | null;
+  question_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface Round {
+  id: number;
+  topic: number;
+  topic_name?: string;
+  level: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
+  name: string;
   question_count: number;
   created_at: string;
   updated_at: string;
@@ -27,6 +39,8 @@ interface Question {
   id: number;
   topic: number;
   topic_name: string;
+  round?: number | null;
+  round_name?: string | null;
   source_type?: 'MANUAL' | 'LINK';
   source_type_display?: string;
   question_text: string;
@@ -91,7 +105,7 @@ class ApiService {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    const url = `${API_URL}${endpoint} `;
+    const url = `${API_URL}${endpoint}`;
     const response = await fetch(url, {
       ...options,
       credentials: 'include', // Include cookies for session authentication
@@ -104,12 +118,33 @@ class ApiService {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: response.statusText }));
       // If there are detailed validation errors, include them
+      // If there are detailed validation errors, include them
+      // Handle various DRF error formats
       if (errorData.errors) {
+        // Format: { errors: { field: ["error"] } }
         const errorMessages = Object.entries(errorData.errors)
           .map(([field, messages]) => `${field}: ${Array.isArray(messages) ? messages.join(', ') : messages} `)
           .join('; ');
         throw new Error(errorMessages || errorData.detail || errorData.error || `HTTP error! status: ${response.status} `);
+      } else if (typeof errorData === 'object') {
+        // Format: { field: ["error"] } or { error: "message" }
+        // Filter out non-error common fields if any
+        const messages = [];
+        for (const [key, value] of Object.entries(errorData)) {
+          if (key === 'error' || key === 'detail') {
+            messages.push(String(value));
+          } else if (Array.isArray(value)) {
+            messages.push(`${key}: ${value.join(', ')}`);
+          } else if (typeof value === 'string') {
+            messages.push(`${key}: ${value}`);
+          }
+        }
+        if (messages.length > 0) {
+          throw new Error(messages.join('; '));
+        }
       }
+
+      throw new Error(errorData.error || errorData.detail || `HTTP error! status: ${response.status} `);
       throw new Error(errorData.error || errorData.detail || `HTTP error! status: ${response.status} `);
     }
 
@@ -165,8 +200,8 @@ class ApiService {
     return this.request(`/users/${username}/check-trial/`);
   }
 
-  // Topic endpoints
-  async getTopics(): Promise<Topic[]> {
+  // Course endpoints
+  async getCourses(): Promise<Course[]> {
     try {
       const result = await this.request<any>('/topics/');
       // Handle both direct array and paginated response
@@ -176,11 +211,11 @@ class ApiService {
         // Handle paginated response
         return result.results;
       } else {
-        console.error('Invalid topics response format:', result);
+        console.error('Invalid courses response format:', result);
         return [];
       }
     } catch (error) {
-      console.error('Error fetching topics:', error);
+      console.error('Error fetching courses:', error);
       return []; // Return empty array on error
     }
   }
@@ -193,7 +228,7 @@ class ApiService {
       if (difficulty) params.append('difficulty', difficulty);
 
       const query = params.toString();
-      const result = await this.request<any>(`/ questions / ${query ? `?${query}` : ''} `);
+      const result = await this.request<any>(`/questions/${query ? `?${query}` : ''}`);
 
       // Handle both direct array and paginated response
       if (Array.isArray(result)) {
@@ -223,7 +258,7 @@ class ApiService {
   }
 
   async getSession(sessionId: number): Promise<InterviewSession> {
-    return this.request<InterviewSession>(`/ sessions / ${sessionId}/`);
+    return this.request<InterviewSession>(`/sessions/${sessionId}/`);
   }
 
   async getSessionsByUsername(username: string): Promise<InterviewSession[]> {
@@ -272,9 +307,15 @@ class ApiService {
   }
 
   // Admin question endpoints
-  async getAdminQuestions(): Promise<Question[]> {
+  async getAdminQuestions(topicId?: number, roundId?: number): Promise<Question[]> {
     try {
-      const result = await this.request<any>('/admin/questions/');
+      const params = new URLSearchParams();
+      if (topicId) params.append('topic_id', topicId.toString());
+      if (roundId) params.append('round_id', roundId.toString());
+
+      const query = params.toString();
+      const result = await this.request<any>(`/admin/questions/${query ? `?${query}` : ''}`);
+
       if (Array.isArray(result)) {
         return result;
       } else if (result && Array.isArray(result.results)) {
@@ -289,6 +330,7 @@ class ApiService {
 
   async createAdminQuestion(question: {
     topic: number;
+    round?: number | null;
     source_type?: 'MANUAL' | 'LINK';
     question_text?: string;
     ideal_answer?: string;
@@ -336,8 +378,8 @@ class ApiService {
     return;
   }
 
-  // Admin topic endpoints
-  async getAdminTopics(): Promise<Topic[]> {
+  // Admin course endpoints
+  async getAdminCourses(): Promise<Course[]> {
     try {
       const result = await this.request<any>('/admin/topics/');
       if (Array.isArray(result)) {
@@ -347,29 +389,29 @@ class ApiService {
       }
       return [];
     } catch (error) {
-      console.error('Error fetching admin topics:', error);
+      console.error('Error fetching admin courses:', error);
       return [];
     }
   }
 
-  async createAdminTopic(topic: {
+  async createAdminCourse(course: {
     name: string;
     description?: string;
-  }): Promise<Topic> {
-    return this.request<Topic>('/admin/topics/', {
+  }): Promise<Course> {
+    return this.request<Course>('/admin/topics/', {
       method: 'POST',
-      body: JSON.stringify(topic),
+      body: JSON.stringify(course),
     });
   }
 
-  async updateAdminTopic(id: number, topic: Partial<Topic>): Promise<Topic> {
-    return this.request<Topic>(`/admin/topics/${id}/`, {
+  async updateAdminCourse(id: number, course: Partial<Course>): Promise<Course> {
+    return this.request<Course>(`/admin/topics/${id}/`, {
       method: 'PUT',
-      body: JSON.stringify(topic),
+      body: JSON.stringify(course),
     });
   }
 
-  async deleteAdminTopic(id: number): Promise<void> {
+  async deleteAdminCourse(id: number): Promise<void> {
     const url = `${API_URL}/admin/topics/${id}/`;
     const response = await fetch(url, {
       method: 'DELETE',
@@ -386,6 +428,72 @@ class ApiService {
 
     // DELETE requests may return empty body (204 No Content)
     // Only try to parse JSON if there's content
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      const text = await response.text();
+      if (text) {
+        return JSON.parse(text);
+      }
+    }
+    return;
+  }
+
+  // Admin Round endpoints
+  async getAdminRounds(topicId?: number, level?: string): Promise<Round[]> {
+    try {
+      const params = new URLSearchParams();
+      if (topicId) params.append('topic_id', topicId.toString());
+      if (level) params.append('level', level);
+
+      const query = params.toString();
+      const result = await this.request<any>(`/admin/rounds/${query ? `?${query}` : ''}`);
+
+      if (Array.isArray(result)) {
+        return result;
+      } else if (result && Array.isArray(result.results)) {
+        return result.results;
+      }
+      return [];
+    } catch (error) {
+      console.error('Error fetching admin rounds:', error);
+      return [];
+    }
+  }
+
+  async createAdminRound(round: {
+    topic: number;
+    level: string;
+    name: string;
+  }): Promise<Round> {
+    return this.request<Round>('/admin/rounds/', {
+      method: 'POST',
+      body: JSON.stringify(round),
+    });
+  }
+
+  async updateAdminRound(id: number, round: Partial<Round>): Promise<Round> {
+    return this.request<Round>(`/admin/rounds/${id}/`, {
+      method: 'PUT',
+      body: JSON.stringify(round),
+    });
+  }
+
+  async deleteAdminRound(id: number): Promise<void> {
+    const url = `${API_URL}/admin/rounds/${id}/`;
+    const response = await fetch(url, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(errorData.error || errorData.detail || `HTTP error! status: ${response.status}`);
+    }
+
+    // DELETE requests may return empty body (204 No Content)
     const contentType = response.headers.get('content-type');
     if (contentType && contentType.includes('application/json')) {
       const text = await response.text();
@@ -451,5 +559,5 @@ class ApiService {
 }
 
 export const apiService = new ApiService();
-export type { UserProfile, Topic, Question, InterviewSession, Answer };
+export type { UserProfile, Course, Round, Question, InterviewSession, Answer };
 

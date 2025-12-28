@@ -8,54 +8,108 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    --background: 240 30% 8%;
-    --foreground: 180 20% 95%;
+    /* OHG Brand Colors HSL Conversion */
+    /* Navy #0A2A43 -> 206 74% 15% */
+    /* Orange #F26123 -> 18 89% 54% */
+    /* Teal #1FA4B6 -> 187 71% 42% */
+    /* Grey #6A6F75 -> 213 5% 44% */
+    /* Light Grey #F8FAFC -> 210 40% 98% */
 
-    --card: 240 25% 12%;
-    --card-foreground: 180 20% 95%;
+    --background: 0 0% 100%;
+    /* White */
+    --foreground: 213 5% 44%;
+    /* Neutral Grey Text */
 
-    --popover: 240 28% 10%;
-    --popover-foreground: 180 20% 95%;
+    --card: 0 0% 100%;
+    --card-foreground: 213 5% 44%;
 
-    --primary: 0 0% 100%;
-    --primary-foreground: 240 30% 8%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 213 5% 44%;
 
-    --secondary: 330 100% 50%;
-    --secondary-foreground: 240 30% 8%;
+    --primary: 18 89% 54%;
+    /* Orange for CTAs */
+    --primary-foreground: 0 0% 100%;
 
-    --muted: 240 20% 20%;
-    --muted-foreground: 180 10% 60%;
+    --secondary: 206 74% 15%;
+    /* Navy for Secondary */
+    --secondary-foreground: 0 0% 100%;
 
-    --accent: 280 80% 60%;
-    --accent-foreground: 180 20% 95%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
 
-    --destructive: 0 85% 60%;
+    --accent: 187 71% 42%;
+    /* Teal */
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 240 20% 20%;
-    --input: 240 20% 18%;
-    --ring: 0 0% 100%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 206 74% 15%;
+    /* Navy Ring Focus */
 
-    --radius: 1rem;
+    --radius: 0.5rem;
 
-    /* Custom OHG365 Design Tokens */
-    --neon-cyan: 0 0% 100%;
-    --neon-pink: 330 100% 50%;
-    --neon-purple: 280 80% 60%;
+    /* Custom Design Tokens */
+    --neon-cyan: 187 71% 42%;
+    --neon-pink: 18 89% 54%;
+    --neon-purple: 206 74% 15%;
 
-    /* Gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(0 0% 100% / 0.9), hsl(240 20% 80% / 0.8));
-    --gradient-secondary: linear-gradient(135deg, hsl(330 100% 50% / 0.6), hsl(280 80% 60% / 0.6));
-    --gradient-background: linear-gradient(180deg, hsl(240 30% 8%), hsl(240 35% 6%));
+    /* Gradients (Light & Subtle) */
+    --gradient-primary: linear-gradient(135deg, hsl(206 74% 15%), hsl(206 74% 20%));
+    /* Navy Gradient */
+    --gradient-secondary: linear-gradient(135deg, hsl(18 89% 54%), hsl(18 89% 60%));
+    /* Orange Gradient */
+    --gradient-background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
 
-    /* Glows */
-    --glow-cyan: 0 0 20px hsl(0 0% 100% / 0.3), 0 0 40px hsl(0 0% 100% / 0.1);
-    --glow-pink: 0 0 20px hsl(330 100% 50% / 0.5), 0 0 40px hsl(330 100% 50% / 0.3);
-    --glow-purple: 0 0 20px hsl(280 80% 60% / 0.5), 0 0 40px hsl(280 80% 60% / 0.3);
+    /* Glows (Subtler for light mode) */
+    --glow-cyan: 0 0 15px hsl(187 71% 42% / 0.2);
+    --glow-pink: 0 0 15px hsl(18 89% 54% / 0.2);
+    --glow-purple: 0 0 15px hsl(206 74% 15% / 0.2);
 
     /* Transitions */
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     --transition-bounce: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  }
+
+  .dark {
+    /* OHG Dark Mode mapping */
+    --background: 206 74% 15%;
+    /* Navy #0A2A43 */
+    --foreground: 210 40% 98%;
+    /* Light Grey/White */
+
+    --card: 206 74% 20%;
+    /* Slightly lighter navy for cards */
+    --card-foreground: 210 40% 98%;
+
+    --popover: 206 74% 15%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 18 89% 54%;
+    /* Orange stays same */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 187 71% 42%;
+    /* Teal as secondary in dark mode */
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 206 74% 25%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 187 71% 42%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 206 74% 25%;
+    --input: 206 74% 25%;
+    --ring: 18 89% 54%;
+    /* Orange ring for focus */
+
+    --gradient-background: linear-gradient(180deg, #0A2A43 0%, #051525 100%);
   }
 }
 

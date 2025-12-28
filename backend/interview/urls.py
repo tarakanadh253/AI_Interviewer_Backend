@@ -4,7 +4,7 @@ from .views import (
     UserProfileViewSet, TopicViewSet, QuestionViewSet,
     InterviewSessionViewSet, AnswerViewSet,
     AdminQuestionViewSet, AdminInterviewSessionViewSet, AdminTopicViewSet,
-    AdminUserViewSet
+    AdminUserViewSet, AdminRoundViewSet
 )
 
 router = DefaultRouter()
@@ -17,6 +17,7 @@ router.register(r'answers', AnswerViewSet, basename='answer')
 # Admin routes
 router.register(r'admin/users', AdminUserViewSet, basename='admin-user')
 router.register(r'admin/topics', AdminTopicViewSet, basename='admin-topic')
+router.register(r'admin/rounds', AdminRoundViewSet, basename='admin-round')
 router.register(r'admin/questions', AdminQuestionViewSet, basename='admin-question')
 router.register(r'admin/sessions', AdminInterviewSessionViewSet, basename='admin-session')
 

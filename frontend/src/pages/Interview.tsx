@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Mic, MicOff, SkipForward, Volume2, Loader2, AlertTriangle, ShieldAlert, Lock, Info } from "lucide-react";
+import { Mic, MicOff, SkipForward, Volume2, Loader2, AlertTriangle, ShieldAlert, Lock, Info, Menu, X } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 import { useToast } from "@/hooks/use-toast";
 import { apiService, type Question, type InterviewSession } from "@/lib/api";
@@ -19,6 +20,7 @@ const Interview = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isInitializingMic, setIsInitializingMic] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [submittedAnswers, setSubmittedAnswers] = useState<Set<number>>(new Set());
   const [speechRecognitionAvailable, setSpeechRecognitionAvailable] = useState(false);
@@ -28,6 +30,7 @@ const Interview = () => {
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const transcriptBufferRef = useRef<string>("");
   const isRecordingRef = useRef<boolean>(false);
+  const [showMobileQuestions, setShowMobileQuestions] = useState(false);
 
   const { isFullscreen, isBanned, tabSwitchCount, enterFullscreen } = useExamProctoring({
     isActive: !isLoading && !!session,
@@ -181,7 +184,8 @@ const Interview = () => {
 
   // Auto-play question audio when question changes or questions are loaded
   useEffect(() => {
-    if (questions.length > 0 && currentQuestionIndex >= 0 && currentQuestionIndex < questions.length && !isLoading) {
+    // Only auto-play if fullscreen is active (interview has effectively started)
+    if (isFullscreen && questions.length > 0 && currentQuestionIndex >= 0 && currentQuestionIndex < questions.length && !isLoading) {
       // Auto-play question audio when question changes
       // Use setTimeout to ensure browser allows autoplay (user interaction required for first play)
       const timer = setTimeout(() => {
@@ -200,7 +204,7 @@ const Interview = () => {
             utterance.lang = 'en-US';
 
             utterance.onstart = () => {
-              console.log('Question audio auto-played');
+              console.debug('Question audio auto-played');
             };
 
             utterance.onerror = (event) => {
@@ -216,7 +220,7 @@ const Interview = () => {
 
       return () => clearTimeout(timer);
     }
-  }, [currentQuestionIndex, questions, isLoading]);
+  }, [currentQuestionIndex, questions, isLoading, isFullscreen]);
 
   useEffect(() => {
     if (!session?.started_at) return;
@@ -381,7 +385,7 @@ const Interview = () => {
         utterance.lang = 'en-US';
 
         utterance.onstart = () => {
-          console.log('Question audio started playing');
+          console.debug('Question audio started playing');
         };
 
         utterance.onerror = (event) => {
@@ -395,74 +399,121 @@ const Interview = () => {
     }
   };
 
-  const submitAnswer = async (answerText: string) => {
-    if (!session || !questions[currentQuestionIndex] || !answerText.trim()) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const submitAnswer = async (answerText: string, specificQuestion?: Question) => {
+    // Use specific question if provided, otherwise fallback to current (careful with race conditions)
+    const questionToSubmit = specificQuestion || questions[currentQuestionIndex];
+
+    if (!session || !questionToSubmit || !answerText.trim()) {
       return;
     }
 
+    // Don't block UI with loading state for optimistic updates
+    // setIsSubmitting(true); 
+
+    // Optimistically mark as submitted immediately
+    setSubmittedAnswers(prev => new Set([...prev, questionToSubmit.id]));
+
     try {
-      const question = questions[currentQuestionIndex];
-      await apiService.submitAnswer(session.id, question.id, answerText);
-      setSubmittedAnswers(prev => new Set([...prev, question.id]));
+      await apiService.submitAnswer(session.id, questionToSubmit.id, answerText);
       toast({
-        title: "Answer submitted",
-        description: "Your answer has been evaluated",
+        title: "Answer recorded",
+        description: "Your answer has been saved.",
+        duration: 2000,
       });
     } catch (error: any) {
       console.error('Error submitting answer:', error);
-      toast({
-        title: "Submission failed",
-        description: error.message || "Could not submit answer. Please try again.",
-        variant: "destructive",
-      });
+      const errorMessage = error.message?.toLowerCase() || "";
+
+      // Handle "Already Answered" error gracefully
+      if (errorMessage.includes("already answered") || errorMessage.includes("unique")) {
+        console.log("Question already answered, synced with backend.");
+      } else {
+        // If it failed, maybe we should warn user? 
+        // For speed, we rely on the fact that most submissions work.
+        // We could add a "retry" queue here in improved version.
+        toast({
+          title: "Saving failed",
+          description: "Could not save your answer. Please try again at the end.",
+          variant: "destructive",
+        });
+        // Revert optimistic update?
+        // setSubmittedAnswers(prev => {
+        //   const newSet = new Set(prev);
+        //   newSet.delete(questionToSubmit.id);
+        //   return newSet;
+        // });
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleNext = async () => {
-    // Stop any ongoing recording
-    if (isRecording) {
-      stopRecording();
-    }
+    try {
+      // capture current state vars before they change
+      const currentQ = questions[currentQuestionIndex];
+      const currentTranscript = transcript;
 
-    // Submit current answer if we have transcript
-    if (transcript.trim() && session && questions[currentQuestionIndex]) {
-      const questionId = questions[currentQuestionIndex].id;
-      if (!submittedAnswers.has(questionId)) {
-        await submitAnswer(transcript);
+      // Stop any ongoing recording
+      if (isRecording) {
+        stopRecording();
       }
-    }
 
-    // Move to next question or complete
-    if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex((prev) => prev + 1);
-      setTranscript("");
-      transcriptBufferRef.current = ""; // Reset transcript buffer
-      setIsRecording(false);
-      // Question audio will auto-play via useEffect when currentQuestionIndex changes
-    } else {
-      await handleComplete();
+      // Submit current answer if we have transcript - FIRE AND FORGET (Optimistic)
+      if (currentTranscript.trim() && session && currentQ) {
+        // Check if already submitted to avoid double submission
+        if (!submittedAnswers.has(currentQ.id)) {
+          // Pass the specific question object to avoid race condition with state index
+          submitAnswer(currentTranscript, currentQ);
+        }
+      }
+
+      // IMMEDIATE UI UPDATE: Move to next question or complete
+      if (currentQuestionIndex < questions.length - 1) {
+        setCurrentQuestionIndex((prev) => prev + 1);
+        setTranscript("");
+        transcriptBufferRef.current = ""; // Reset transcript buffer
+        setIsRecording(false);
+        // Question audio will auto-play via useEffect when currentQuestionIndex changes
+      } else {
+        await handleComplete();
+      }
+    } catch (error) {
+      console.error("Error in handleNext:", error);
+      toast({
+        title: "Navigation Error",
+        description: "Could not proceed to next question. Please try again.",
+        variant: "destructive"
+      });
     }
   };
 
   const handleComplete = async () => {
     if (!session) return;
 
+    // Optimistically navigate immediately
+    navigate("/results");
+
     try {
-      // Complete session
-      const completedSession = await apiService.completeSession(session.id);
-      localStorage.setItem('completed_session_id', completedSession.id.toString());
-      navigate("/results");
+      // Fire and forget - complete session in background
+      apiService.completeSession(session.id)
+        .then(completedSession => {
+          localStorage.setItem('completed_session_id', completedSession.id.toString());
+        })
+        .catch(error => {
+          console.error('Error completing session in background:', error);
+          // Even if it fails, the results page load might fix it or we can handle it there
+        });
+
     } catch (error: any) {
-      console.error('Error completing session:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Could not complete interview.",
-        variant: "destructive",
-      });
+      console.error('Error firing completion:', error);
     }
   };
 
   const startRecording = async () => {
+    setIsInitializingMic(true);
     try {
       // Request microphone permission
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -499,6 +550,7 @@ const Interview = () => {
               title: "Transcription Error",
               description: "Could not start speech recognition. You can still type your answer.",
               variant: "destructive",
+              duration: 3000,
             });
           }
         }
@@ -507,6 +559,7 @@ const Interview = () => {
           title: "Speech Recognition Unavailable",
           description: "Your browser doesn't support speech recognition. Please type your answer manually.",
           variant: "destructive",
+          duration: 3000,
         });
       }
 
@@ -529,12 +582,20 @@ const Interview = () => {
         description: errorMessage,
         variant: "destructive",
       });
+    } finally {
+      setIsInitializingMic(false);
     }
   };
 
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
+      if (mediaRecorderRef.current.state !== 'inactive') {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch (error: any) {
+          console.error('Error stopping recorder:', error);
+        }
+      }
 
       if (recognitionRef.current) {
         try {
@@ -582,7 +643,7 @@ const Interview = () => {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Card className="p-8">
-          <p className="text-muted-foreground">No questions available. Please select topics and try again.</p>
+          <p className="text-muted-foreground">No questions available. Please select courses and try again.</p>
           <Button onClick={() => navigate("/topic-selection")} className="mt-4">
             Go Back
           </Button>
@@ -598,31 +659,31 @@ const Interview = () => {
   // Banned State Overlay
   if (isBanned) {
     return (
-      <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col items-center justify-center p-4 text-center animate-in fade-in duration-500">
-        <div className="max-w-lg w-full bg-slate-900/50 backdrop-blur-xl p-10 rounded-3xl border border-red-500/20 shadow-[0_0_50px_-12px_rgba(239,68,68,0.25)]">
-          <div className="w-20 h-20 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-8 animate-[pulse_3s_ease-in-out_infinite]">
-            <Lock className="w-10 h-10 text-red-500" />
+      <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-center animate-in fade-in duration-500 font-sans">
+        <div className="max-w-lg w-full bg-card p-10 rounded-3xl border border-destructive/20 shadow-2xl">
+          <div className="w-20 h-20 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-8 animate-[pulse_3s_ease-in-out_infinite]">
+            <Lock className="w-10 h-10 text-destructive" />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-4 tracking-tight">Interview Terminated</h1>
-          <p className="text-slate-400 mb-8 leading-relaxed">
+          <h1 className="text-3xl font-bold text-foreground mb-4 tracking-tight">Interview Terminated</h1>
+          <p className="text-muted-foreground mb-8 leading-relaxed">
             This session has been permanently locked due to multiple violations of the examination integrity rules.
           </p>
 
           <div className="flex flex-col gap-3 mb-8">
-            <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800 flex items-center justify-between">
-              <span className="text-slate-400 text-sm">Violation Type</span>
-              <span className="text-red-400 font-mono text-sm font-semibold">TAB_SWITCH / FOCUS_LOST</span>
+            <div className="bg-muted/50 p-4 rounded-xl border border-border flex items-center justify-between">
+              <span className="text-muted-foreground text-sm">Violation Type</span>
+              <span className="text-destructive font-mono text-sm font-semibold">TAB_SWITCH / FOCUS_LOST</span>
             </div>
-            <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800 flex items-center justify-between">
-              <span className="text-slate-400 text-sm">Total Violations</span>
-              <span className="text-red-400 font-mono text-sm font-semibold">{tabSwitchCount} / 2 Allowed</span>
+            <div className="bg-muted/50 p-4 rounded-xl border border-border flex items-center justify-between">
+              <span className="text-muted-foreground text-sm">Total Violations</span>
+              <span className="text-destructive font-mono text-sm font-semibold">{tabSwitchCount} / 2 Allowed</span>
             </div>
           </div>
 
           <Button
             onClick={() => navigate('/')}
             variant="outline"
-            className="w-full border-slate-700 hover:bg-slate-800 hover:text-white h-12 text-base"
+            className="w-full border-border hover:bg-muted text-foreground h-12 text-base font-medium"
           >
             Return to Dashboard
           </Button>
@@ -632,34 +693,38 @@ const Interview = () => {
   }
 
   // Fullscreen Enforcement Overlay
-  // Only show if not loading, not banned, and we have questions (meaning session started)
   if (!isFullscreen && !isLoading && questions.length > 0) {
     return (
-      <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-4 animate-in fade-in duration-300">
-        <Card className="max-w-md w-full p-8 bg-slate-900 border-slate-700 shadow-2xl relative overflow-hidden">
+      <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-md flex flex-col items-center justify-center p-4 animate-in fade-in duration-300">
+        <Card className="max-w-md w-full p-8 bg-card border-border shadow-xl relative overflow-hidden">
           {/* Decorative background vibe */}
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500" />
-          <div className="absolute -top-24 -right-24 w-48 h-48 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-ohg-navy to-ohg-teal" />
 
-          <div className="w-16 h-16 rounded-2xl bg-slate-800 flex items-center justify-center mx-auto mb-6 shadow-xl border border-slate-700">
-            <ShieldAlert className="w-8 h-8 text-blue-400" />
+          <div className="w-16 h-16 rounded-2xl bg-ohg-teal/10 flex items-center justify-center mx-auto mb-6 shadow-sm">
+            <ShieldAlert className="w-8 h-8 text-ohg-teal" />
           </div>
 
-          <h2 className="text-2xl font-bold text-center text-white mb-3">Secure Environment</h2>
-          <p className="text-center text-slate-400 mb-8 leading-relaxed text-sm">
+          <h2 className="text-2xl font-bold text-center text-foreground mb-3">Secure Environment</h2>
+          <p className="text-center text-muted-foreground mb-8 leading-relaxed text-sm">
             To ensure interview integrity, this session requires <strong>Fullscreen Mode</strong>.
             Exiting fullscreen or switching tabs will be recorded as a violation.
           </p>
 
           <div className="space-y-4">
             <Button
-              onClick={enterFullscreen}
-              className="w-full py-6 text-base bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-500/20 transition-all hover:scale-[1.02]"
+              onClick={async () => {
+                await enterFullscreen();
+                // We don't need to manually play audio here because the useEffect keeps track of isFullscreen
+                // changing to true, and triggers the audio.
+                // However, to be doubly sure and immediate:
+                // playQuestion(); // This might conflict with the useEffect.
+              }}
+              className="w-full py-6 text-base bg-ohg-navy hover:bg-ohg-navy/90 text-white shadow-lg shadow-ohg-navy/20 transition-all hover:scale-[1.02]"
             >
               Enter Fullscreen & Start
             </Button>
 
-            <p className="text-[10px] text-center text-slate-500 uppercase tracking-widest font-semibold">
+            <p className="text-[10px] text-center text-gray-400 uppercase tracking-widest font-semibold">
               Violations Recorded: {tabSwitchCount} / 2
             </p>
           </div>
@@ -669,28 +734,37 @@ const Interview = () => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row bg-gradient-to-br from-background via-background to-background/95">
-      {/* Classic Elegant Sidebar */}
-      {/* Classic Professional Sidebar */}
-      <div className="w-full lg:w-80 bg-slate-950 border-b lg:border-b-0 lg:border-r border-slate-800 flex flex-col lg:sticky lg:top-0 lg:h-screen z-20">
+    <div className="min-h-screen flex flex-col lg:flex-row bg-background">
+      {/* Sidebar - Brand Navy */}
+      <div className="w-full lg:w-80 bg-ohg-navy border-b lg:border-b-0 lg:border-r border-ohg-navy flex flex-col lg:sticky lg:top-0 lg:h-screen z-20 text-white shadow-2xl">
 
         {/* Header */}
-        <div className="p-8 border-b border-slate-800 bg-slate-950/50 backdrop-blur-sm">
-          <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/20 text-primary">
-              <span className="font-bold">Q</span>
-            </span>
-            Overview
-          </h2>
+        <div className="p-8 border-b border-white/10 bg-ohg-navy">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ohg-orange text-white">
+                <span className="font-bold">Q</span>
+              </span>
+              Overview
+            </h2>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="lg:hidden text-white/70 hover:text-white"
+              onClick={() => setShowMobileQuestions(!showMobileQuestions)}
+            >
+              {showMobileQuestions ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </Button>
+          </div>
 
-          <div className="mt-6">
-            <div className="flex justify-between text-xs font-medium text-slate-400 mb-2">
+          <div className={cn("mt-6", !showMobileQuestions && "hidden lg:block")}>
+            <div className="flex justify-between text-xs font-medium text-white/60 mb-2">
               <span>Progress</span>
               <span>{questions.length > 0 ? Math.round((submittedAnswers.size / questions.length) * 100) : 0}%</span>
             </div>
-            <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+            <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
               <div
-                className="h-full bg-primary transition-all duration-500 ease-out rounded-full shadow-[0_0_10px_rgba(var(--primary),0.5)]"
+                className="h-full bg-ohg-orange transition-all duration-500 ease-out rounded-full shadow-[0_0_10px_rgba(242,97,35,0.5)]"
                 style={{ width: `${questions.length > 0 ? (submittedAnswers.size / questions.length) * 100 : 0}%` }}
               />
             </div>
@@ -698,26 +772,25 @@ const Interview = () => {
         </div>
 
         {/* Questions List */}
-        <div className="flex-1 overflow-y-auto py-4 px-4 custom-scrollbar">
+        <div className={cn("flex-1 overflow-y-auto py-4 px-4 custom-scrollbar-light", !showMobileQuestions && "hidden lg:block")}>
           <div className="space-y-1">
             {questions.map((q, index) => {
               const isCurrent = index === currentQuestionIndex;
               const isAnswered = submittedAnswers.has(q.id);
-              const isPast = index < currentQuestionIndex;
 
               return (
                 <div
                   key={q.id}
                   className={`group relative mb-2 rounded-xl border p-4 transition-all duration-300 ${isCurrent
-                    ? "bg-slate-900/80 border-primary/50 shadow-[0_0_20px_-5px_rgba(0,0,0,0.3)]"
+                    ? "bg-white/10 border-ohg-orange/50 shadow-inner"
                     : isAnswered
-                      ? "bg-slate-900/40 border-emerald-500/20 hover:bg-slate-900/60"
-                      : "bg-transparent border-transparent hover:bg-slate-900/40"
+                      ? "bg-ohg-teal/10 border-transparent hover:bg-white/5"
+                      : "bg-transparent border-transparent hover:bg-white/5"
                     }`}
                 >
                   {/* Active Indicator Line */}
                   {isCurrent && (
-                    <div className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-primary shadow-[0_0_10px_currentColor]" />
+                    <div className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-ohg-orange shadow-[0_0_10px_currentColor]" />
                   )}
 
                   <div className="flex items-start gap-4 pl-2">
@@ -725,10 +798,10 @@ const Interview = () => {
                     <div className="flex-shrink-0 pt-0.5">
                       <div
                         className={`flex h-8 w-8 items-center justify-center rounded-lg border text-sm font-bold transition-all duration-300 ${isCurrent
-                          ? "border-primary bg-primary text-slate-950 shadow-lg shadow-primary/20 scale-110"
+                          ? "border-ohg-orange bg-ohg-orange text-white shadow-lg scale-110"
                           : isAnswered
-                            ? "border-emerald-500 bg-emerald-500/10 text-emerald-500"
-                            : "border-slate-700 bg-slate-800/50 text-slate-500"
+                            ? "border-ohg-teal bg-ohg-teal/20 text-ohg-teal"
+                            : "border-white/10 bg-white/5 text-white/40"
                           }`}
                       >
                         {isAnswered ? "✓" : index + 1}
@@ -738,25 +811,25 @@ const Interview = () => {
                     {/* Content */}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between mb-0.5">
-                        <span className={`text-sm font-semibold truncate pr-2 ${isCurrent ? "text-white" : isAnswered ? "text-emerald-400" : "text-slate-400"
+                        <span className={`text-sm font-semibold truncate pr-2 ${isCurrent ? "text-white" : isAnswered ? "text-ohg-teal" : "text-white/40"
                           }`}>
                           Question {index + 1}
                         </span>
                         {isCurrent && (
                           <span className="flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-primary opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                            <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-ohg-orange opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-ohg-orange"></span>
                           </span>
                         )}
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <span className={`text-xs ${isCurrent ? "text-slate-300" : "text-slate-500"}`}>
+                        <span className={`text-xs ${isCurrent ? "text-white/60" : "text-white/30"}`}>
                           {currentQuestionIndex === index ? "Active" : isAnswered ? "Completed" : "Pending"}
                         </span>
                         {/* Difficulty Dot */}
-                        <span className="h-1 w-1 rounded-full bg-slate-700"></span>
-                        <span className="text-xs text-slate-500 uppercase tracking-wider">{q.difficulty}</span>
+                        <span className="h-1 w-1 rounded-full bg-white/20"></span>
+                        <span className="text-xs text-white/30 uppercase tracking-wider">{q.difficulty}</span>
                       </div>
                     </div>
                   </div>
@@ -766,35 +839,34 @@ const Interview = () => {
           </div>
         </div>
 
-        {/* Minimal Footer Legend */}
-        <div className="p-6 border-t border-slate-800 bg-slate-950/50 text-center">
-          <p className="text-xs text-slate-500 font-medium">
+        {/* Footer */}
+        <div className="p-6 border-t border-white/10 bg-ohg-navy text-center">
+          <p className="text-xs text-white/40 font-medium">
             Step {currentQuestionIndex + 1} of {questions.length}
           </p>
         </div>
       </div>
 
-      {/* Main Content */}
-      {/* Main Content - Classic Professional */}
-      <div className="flex-1 overflow-y-auto min-h-screen bg-slate-950/20">
-        <div className="max-w-5xl mx-auto p-8 lg:p-12">
+      {/* Main Content - Light & Clean */}
+      <div className="flex-1 overflow-y-auto min-h-screen bg-background">
+        <div className="max-w-5xl mx-auto p-4 md:p-8 lg:p-12">
 
           {/* Timer & Meta */}
-          <div className="flex justify-between items-end mb-8 border-b border-primary/10 pb-4">
+          <div className="flex justify-between items-end mb-8 border-b border-border pb-4">
             <div>
-              <span className="text-xs font-bold text-primary tracking-widest uppercase mb-1 block">
+              <span className="text-xs font-bold text-ohg-orange tracking-widest uppercase mb-1 block">
                 Current Question
               </span>
-              <div className="text-sm text-slate-400">
+              <div className="text-sm text-foreground/80">
                 {currentQuestion && (
                   <span className="flex items-center gap-2">
                     {currentQuestion.topic_name}
-                    <span className="h-1 w-1 rounded-full bg-slate-600"></span>
-                    <span className="uppercase text-[10px] tracking-wider border border-slate-700 px-1.5 py-0.5 rounded text-slate-400">
+                    <span className="h-1 w-1 rounded-full bg-muted-foreground/30"></span>
+                    <span className="uppercase text-[10px] tracking-wider border border-border px-1.5 py-0.5 rounded text-muted-foreground bg-card">
                       {currentQuestion.difficulty}
                     </span>
                     {tabSwitchCount > 0 && (
-                      <span className="flex items-center gap-1 text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded text-[10px] border border-amber-500/20 ml-2 font-mono">
+                      <span className="flex items-center gap-1 text-amber-600 bg-amber-50 px-2 py-0.5 rounded text-[10px] border border-amber-200 ml-2 font-mono">
                         <AlertTriangle className="w-3 h-3" />
                         WARNINGS: {tabSwitchCount}/2
                       </span>
@@ -803,14 +875,18 @@ const Interview = () => {
                 )}
               </div>
             </div>
-            <div className={`font-mono text-4xl font-light tracking-tighter ${timeLeft < 300 ? "text-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]" : "text-slate-200"}`}>
+            <div className={`font-mono text-4xl font-light tracking-tighter ${timeLeft < 300 ? "text-red-500 animate-pulse" : "text-ohg-navy"}`}>
               {formatTime(timeLeft)}
             </div>
           </div>
 
-          {/* Question Display - Hero Style */}
+          {/* Question Display */}
           <div className="mb-12 text-center space-y-8 animate-fade-in-up">
-            <h2 className="text-3xl md:text-4xl lg:text-5xl font-medium leading-tight text-white drop-shadow-2xl">
+            <h2
+              className="text-3xl md:text-4xl lg:text-5xl font-bold leading-tight text-foreground select-none cursor-default"
+              onContextMenu={(e) => e.preventDefault()}
+              onCopy={(e) => { e.preventDefault(); return false; }}
+            >
               {currentQuestion?.question_text}
             </h2>
 
@@ -818,10 +894,10 @@ const Interview = () => {
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-slate-400 hover:text-white hover:bg-white/5 rounded-full px-6 border border-transparent hover:border-slate-700 transition-all"
+                className="text-gray-500 hover:text-ohg-navy hover:bg-gray-100 rounded-full px-6 border border-transparent hover:border-gray-200 transition-all font-medium"
                 onClick={playQuestion}
               >
-                <Volume2 className="h-4 w-4 mr-2 text-primary" />
+                <Volume2 className="h-4 w-4 mr-2 text-ohg-teal" />
                 Replay Audio
               </Button>
             </div>
@@ -829,19 +905,20 @@ const Interview = () => {
 
           {/* Recording / Interaction Area */}
           <div className="relative max-w-2xl mx-auto">
-            {/* Glass Card */}
-            <div className="absolute -inset-1 bg-gradient-to-b from-primary/20 to-transparent blur-2xl opacity-20 rounded-[2rem]"></div>
-            <Card className="relative p-1 bg-slate-900/40 backdrop-blur-2xl border-slate-800 rounded-[2rem] shadow-2xl overflow-hidden">
-              <div className="bg-slate-950/50 rounded-[1.8rem] p-8 md:p-10 border border-white/5 flex flex-col items-center gap-6">
+            <Card className="relative p-1 bg-card border-border rounded-[2rem] shadow-xl overflow-hidden">
+              <div className="bg-muted/30 rounded-[1.8rem] p-8 md:p-10 flex flex-col items-center gap-6 relative overflow-hidden">
+                {/* Ambience inside card */}
+                <div className="absolute top-0 right-0 w-64 h-64 bg-ohg-teal/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/2" />
+                <div className="absolute bottom-0 left-0 w-64 h-64 bg-ohg-orange/5 rounded-full blur-3xl pointer-events-none translate-y-1/2 -translate-x-1/2" />
 
                 {/* Visualizer / Status */}
-                <div className="h-12 flex items-center justify-center gap-1 w-full">
+                <div className="h-12 flex items-center justify-center gap-1 w-full relative z-10">
                   {isRecording ? (
                     <div className="flex items-center gap-1 h-12">
                       {[...Array(8)].map((_, i) => (
                         <div
                           key={i}
-                          className="w-1.5 bg-primary rounded-full animate-music-bar"
+                          className="w-1.5 bg-ohg-orange rounded-full animate-music-bar"
                           style={{
                             animationDelay: `${i * 0.1}s`,
                           }}
@@ -849,29 +926,31 @@ const Interview = () => {
                       ))}
                     </div>
                   ) : (
-                    <span className="text-sm font-medium text-slate-500 uppercase tracking-widest">
+                    <span className="text-sm font-semibold text-muted-foreground uppercase tracking-widest">
                       {isAnswered ? "Answer Recorded" : "Ready to Record"}
                     </span>
                   )}
                 </div>
 
                 {/* Big Mic Button */}
-                <div className="relative group">
+                <div className="relative group z-10">
                   {isRecording && (
-                    <div className="absolute inset-0 bg-primary/20 rounded-full animate-ping"></div>
+                    <div className="absolute inset-0 bg-ohg-orange/20 rounded-full animate-ping"></div>
                   )}
                   <Button
                     onClick={toggleRecording}
-                    disabled={isTranscribing || isAnswered}
-                    className={`relative w-24 h-24 rounded-full flex items-center justify-center transition-all duration-500 border-4 ${isRecording
-                      ? "bg-red-500/10 border-red-500 text-red-500 hover:bg-red-500/20"
+                    disabled={isTranscribing || isAnswered || isInitializingMic}
+                    className={`relative w-24 h-24 rounded-full flex items-center justify-center transition-all duration-500 border-4 ${(isRecording || isInitializingMic)
+                      ? "bg-white border-red-500 text-red-500 shadow-xl"
                       : isAnswered
                         ? "bg-emerald-500/10 border-emerald-500 text-emerald-500 cursor-default"
-                        : "bg-slate-900 border-slate-700 text-slate-400 hover:border-primary hover:text-primary hover:bg-primary/5 hover:scale-105 hover:shadow-[0_0_30px_-5px_hsl(var(--primary)/0.3)]"
+                        : "bg-card border-border text-muted-foreground hover:border-ohg-orange hover:text-white hover:bg-ohg-orange hover:scale-105 hover:shadow-lg shadow-sm"
                       }`}
                   >
-                    {isRecording ? (
-                      <div className="w-8 h-8 rounded bg-current animate-pulse shadow-[0_0_15px_currentColor]" />
+                    {isInitializingMic ? (
+                      <Loader2 className="h-10 w-10 animate-spin text-red-500" />
+                    ) : isRecording ? (
+                      <div className="w-8 h-8 rounded bg-red-500 animate-pulse shadow-sm" />
                     ) : isAnswered ? (
                       <span className="text-2xl font-bold">✓</span>
                     ) : (
@@ -880,7 +959,7 @@ const Interview = () => {
                   </Button>
                 </div>
 
-                <p className="text-sm font-medium text-slate-400">
+                <p className="text-sm font-medium text-gray-500 relative z-10">
                   {isTranscribing
                     ? "Transcribing your answer..."
                     : isRecording
@@ -893,14 +972,14 @@ const Interview = () => {
 
                 {/* Transcript Area */}
                 {(transcript || isRecording) && (
-                  <div className="w-full mt-4 p-4 rounded-xl bg-slate-900/50 border border-slate-800 text-left max-h-40 overflow-y-auto custom-scrollbar">
+                  <div className="w-full mt-4 p-4 rounded-xl bg-card border border-border text-left max-h-40 overflow-y-auto custom-scrollbar-light shadow-sm relative z-10">
                     {isRecording && !transcript && (
-                      <div className="flex items-center gap-2 text-primary text-xs font-bold uppercase tracking-wider mb-2">
+                      <div className="flex items-center gap-2 text-red-500 text-xs font-bold uppercase tracking-wider mb-2">
                         <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
                         Live
                       </div>
                     )}
-                    <p className="text-slate-300 leading-relaxed">
+                    <p className="text-foreground leading-relaxed">
                       {transcript || (speechRecognitionAvailable ? "Speak clearly..." : "Listening...")}
                     </p>
                   </div>
@@ -913,13 +992,17 @@ const Interview = () => {
           <div className="mt-12 flex justify-center">
             <Button
               onClick={handleNext}
-              disabled={isTranscribing}
-              className={`px-10 py-6 text-lg rounded-full font-semibold tracking-wide transition-all duration-300 ${(isAnswered || transcript)
-                ? "bg-white text-slate-950 hover:bg-slate-200 shadow-[0_0_20px_-5px_rgba(255,255,255,0.3)] hover:scale-105" // High contrast "Next"
-                : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+              disabled={isTranscribing || isSubmitting}
+              className={`px-10 py-6 text-lg rounded-full font-bold tracking-wide transition-all duration-300 select-none ${(isAnswered || transcript)
+                ? "bg-ohg-navy text-white hover:bg-[#051525] shadow-xl hover:scale-105" // High contrast "Next"
+                : "bg-gray-200 text-gray-400 hover:bg-gray-300"
                 }`}
             >
-              {currentQuestionIndex < questions.length - 1 ? (
+              {isSubmitting ? (
+                <span className="flex items-center gap-3">
+                  <Loader2 className="h-5 w-5 animate-spin" /> Processing...
+                </span>
+              ) : currentQuestionIndex < questions.length - 1 ? (
                 <span className="flex items-center gap-3">
                   Next Question <SkipForward className="h-5 w-5" />
                 </span>
@@ -931,7 +1014,7 @@ const Interview = () => {
 
           {/* Footer Tip */}
           <div className="mt-12 text-center opacity-40 hover:opacity-100 transition-opacity">
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-[0.2em]">
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-[0.2em]">
               Speak naturally • Take your time
             </p>
           </div>

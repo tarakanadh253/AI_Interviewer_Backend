@@ -60,6 +60,28 @@ class Topic(models.Model):
         return self.name
 
 
+class Round(models.Model):
+    """Interview rounds within a topic level"""
+    LEVEL_CHOICES = [
+        ('BEGINNER', 'Beginner'),
+        ('INTERMEDIATE', 'Intermediate'),
+        ('ADVANCED', 'Advanced'),
+    ]
+    
+    topic = models.ForeignKey(Topic, on_delete=models.CASCADE, related_name='rounds')
+    level = models.CharField(max_length=20, choices=LEVEL_CHOICES)
+    name = models.CharField(max_length=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rounds'
+        ordering = ['level', 'name']
+
+    def __str__(self):
+        return f"{self.topic.name} - {self.level} - {self.name}"
+
+
 class Question(models.Model):
     """Interview questions with ideal answers"""
     DIFFICULTY_CHOICES = [
@@ -74,6 +96,7 @@ class Question(models.Model):
     ]
 
     topic = models.ForeignKey(Topic, on_delete=models.CASCADE, related_name='questions')
+    round = models.ForeignKey(Round, on_delete=models.CASCADE, related_name='questions', null=True, blank=True)
     source_type = models.CharField(
         max_length=10, 
         choices=SOURCE_TYPE_CHOICES, 

@@ -52,6 +52,27 @@ export default {
           pink: "hsl(var(--neon-pink))",
           purple: "hsl(var(--neon-purple))",
         },
+        // OHG Brand Colors
+        ohg: {
+          navy: {
+            DEFAULT: '#0A2A43', // Primary Brand
+            light: '#1B3B6F',
+            dark: '#051525',
+          },
+          orange: {
+            DEFAULT: '#F26123', // CTA
+            hover: '#D95218',
+            light: '#FF9E57',
+          },
+          teal: {
+            DEFAULT: '#1FA4B6', // Accent
+            light: '#67E8F9',
+          },
+          grey: {
+            DEFAULT: '#6A6F75', // Text
+            light: '#F8FAFC', // Backgrounds
+          },
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -75,16 +96,6 @@ export default {
             height: "0",
           },
         },
-      },
-      animation: {
-        "accordion-down": "accordion-down 0.2s ease-out",
-        "accordion-up": "accordion-up 0.2s ease-out",
-        "float": "float 6s ease-in-out infinite",
-        "pulse-glow": "pulse-glow 2s ease-in-out infinite",
-        "fade-in": "fade-in 0.5s ease-out",
-        "slide-up": "slide-up 0.5s ease-out",
-      },
-      keyframes: {
         "fade-in": {
           "0%": { opacity: "0", transform: "translateY(10px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
@@ -94,6 +105,15 @@ export default {
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
       },
+      animation: {
+        "accordion-down": "accordion-down 0.2s ease-out",
+        "accordion-up": "accordion-up 0.2s ease-out",
+        "float": "float 6s ease-in-out infinite",
+        "pulse-glow": "pulse-glow 2s ease-in-out infinite",
+        "fade-in": "fade-in 0.5s ease-out",
+        "slide-up": "slide-up 0.5s ease-out",
+      },
+
     },
   },
   plugins: [require("tailwindcss-animate")],

@@ -28,12 +28,22 @@ def get_model():
             # On Render Free Tier, heavy ML models often cause OOM (Out Of Memory) kills.
             # We default to disabling the heavy model on Render to ensure reliability.
             is_on_render = os.environ.get('RENDER')
-            enable_heavy_nlp = os.environ.get('ENABLE_HEAVY_NLP', 'False').lower() == 'true'
+            # Check if we should disable heavy NLP (default to True if not specified to be safe, or check env)
+            # For this debugging session, let's make it robust:
+            enable_heavy_nlp = os.environ.get('ENABLE_HEAVY_NLP', 'True').lower() == 'true'
 
             if is_on_render and not enable_heavy_nlp:
                 logger.warning("Running on Render: Heavy NLP model disabled to prevent OOM. Using keyword fallback.")
                 NLP_AVAILABLE = False
                 return None
+            
+            # Additional check for local development to avoid hanging if library is missing
+            try:
+                import sentence_transformers
+            except ImportError:
+                 logger.warning("sentence_transformers not installed. Using keyword fallback.")
+                 NLP_AVAILABLE = False
+                 return None
 
             logger.info("Lazily loading NLP model 'all-MiniLM-L6-v2'...")
             from sentence_transformers import SentenceTransformer
@@ -44,10 +54,13 @@ def get_model():
         except ImportError as e:
             logger.error(f"NLP libraries not available: {e}")
             NLP_AVAILABLE = False
-            raise 
+            return None
         except Exception as e:
             logger.error(f"Failed to load NLP model: {e}")
             NLP_AVAILABLE = False # Don't raise, just fallback
+            return None
+            
+    return _nlp_model
             
     return _nlp_model
 
@@ -488,6 +501,22 @@ def evaluate_answer(user_answer: str, ideal_answer: str) -> Dict:
         - missing_keywords: List[str] - Important keywords missing
         - score_breakdown: Dict - Detailed breakdown of scores
     """
+    if user_answer is None:
+        logger.info("None user answer provided, returning zero scores")
+        return {
+            "similarity_score": 0.0,
+            "accuracy_score": 0.0,
+            "completeness_score": 0.0,
+            "communication_subscore": 0.0,
+            "matched_keywords": [],
+            "missing_keywords": [],
+            "score_breakdown": {
+                "semantic_similarity": 0.0,
+                "keyword_coverage": 0.0,
+                "communication_quality": 0.0
+            }
+        }
+    
     if not user_answer or not user_answer.strip():
         logger.info("Empty user answer provided, returning zero scores")
         return {

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import UserProfile, Topic, Question, InterviewSession, Answer
+from .models import UserProfile, Topic, Question, InterviewSession, Answer, Round
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
@@ -15,43 +15,11 @@ class UserProfileSerializer(serializers.ModelSerializer):
         }
     
     def to_representation(self, instance):
-        """Handle cases where access_type might be missing from database"""
-        # Build data dictionary manually to avoid field access errors
-        data = {
-            'id': instance.id,
-            'username': instance.username,
-            'email': instance.email,
-            'name': getattr(instance, 'name', None),
-            'is_active': getattr(instance, 'is_active', True),
-            'role': getattr(instance, 'role', 'USER'),
-            'plain_password': getattr(instance, 'plain_password', None),
-            'has_used_trial': getattr(instance, 'has_used_trial', False),
-            'created_at': instance.created_at.isoformat() if hasattr(instance, 'created_at') and instance.created_at else None,
-            'updated_at': instance.updated_at.isoformat() if hasattr(instance, 'updated_at') and instance.updated_at else None,
-        }
+        """Standard representation with fallback for access_type"""
+        data = super().to_representation(instance)
         
-        # Try to get access_type safely
-        try:
-            # First try direct attribute access
-            if hasattr(instance, 'access_type'):
-                access_type = instance.access_type
-                data['access_type'] = access_type if access_type else 'TRIAL'
-            else:
-                # Try to get from database directly
-                from django.db import connection
-                with connection.cursor() as cursor:
-                    cursor.execute("SELECT access_type FROM user_profiles WHERE id = ?", [instance.id])
-                    result = cursor.fetchone()
-                    if result and result[0]:
-                        data['access_type'] = result[0]
-                    else:
-                        data['access_type'] = 'TRIAL'
-        except Exception:
-            # If all else fails, default to TRIAL
-            data['access_type'] = 'TRIAL'
-        
-        # Ensure access_type is always present and valid
-        if not data.get('access_type') or data['access_type'] not in ['TRIAL', 'FULL', 'ADMIN']:
+        # Ensure access_type is valid
+        if not data.get('access_type') or data.get('access_type') not in ['TRIAL', 'FULL', 'ADMIN']:
             data['access_type'] = 'TRIAL'
         
         return data
@@ -111,6 +79,22 @@ class UserLoginSerializer(serializers.Serializer):
     password = serializers.CharField(required=True, write_only=True)
 
 
+class RoundSerializer(serializers.ModelSerializer):
+    """Serializer for Round"""
+    question_count = serializers.SerializerMethodField()
+    topic_name = serializers.CharField(source='topic.name', read_only=True)
+    
+    class Meta:
+        model = Round
+        fields = ['id', 'topic', 'topic_name', 'level', 'name', 'question_count', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+        
+    def get_question_count(self, obj):
+        if hasattr(obj, 'question_count'):
+            return obj.question_count
+        return obj.questions.filter(is_active=True).count()
+
+
 class TopicSerializer(serializers.ModelSerializer):
     """Serializer for Topic"""
     question_count = serializers.SerializerMethodField()
@@ -121,19 +105,22 @@ class TopicSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
     
     def get_question_count(self, obj):
+        if hasattr(obj, 'question_count'):
+            return obj.question_count
         return obj.questions.filter(is_active=True).count()
 
 
 class QuestionSerializer(serializers.ModelSerializer):
     """Serializer for Question"""
     topic_name = serializers.CharField(source='topic.name', read_only=True)
+    round_name = serializers.CharField(source='round.name', read_only=True, allow_null=True)
     reference_links_list = serializers.SerializerMethodField()
     source_type_display = serializers.CharField(source='get_source_type_display', read_only=True)
     
     class Meta:
         model = Question
         fields = [
-            'id', 'topic', 'topic_name', 'source_type', 'source_type_display',
+            'id', 'topic', 'topic_name', 'round', 'round_name', 'source_type', 'source_type_display',
             'question_text', 'ideal_answer', 'difficulty', 'is_active', 
             'reference_links', 'reference_links_list', 'created_at', 'updated_at'
         ]
@@ -284,25 +271,21 @@ class InterviewSessionSerializer(serializers.ModelSerializer):
             return []
         
         try:
-            # Check if answers table exists before querying
-            from django.db import connection
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='answers'")
-                if not cursor.fetchone():
-                    return []
-            
             # Return actual answers for completed sessions or sessions with answers
-            answers = obj.answers.all()
+            # Use all() which will be lazy; if table doesn't exist, this might error on evaluation
+            # but we catch it below.
+            answers = obj.answers.all().select_related('question')
             if answers.exists():
-                # Return minimal answer data to avoid circular imports
                 return [
                     {
                         'id': answer.id,
                         'question': answer.question_id,
                         'question_id': answer.question_id,
+                        'question_text': answer.question.question_text if answer.question else "Unknown Question",
                         'user_answer': answer.user_answer,
                         'similarity_score': answer.similarity_score,
                         'accuracy_score': answer.accuracy_score,
+                        'completeness_score': answer.completeness_score,
                         'communication_subscore': answer.communication_subscore,
                         'topic_score': answer.topic_score,
                         'created_at': answer.created_at.isoformat() if answer.created_at else None,
@@ -310,7 +293,9 @@ class InterviewSessionSerializer(serializers.ModelSerializer):
                     for answer in answers
                 ]
             return []
-        except Exception:
+        except Exception as e:
+            # Log error if needed, or just return empty
+            # print(f"Error getting answers for session {obj.id}: {e}")
             return []
     
     def get_answer_count(self, obj):
@@ -318,14 +303,6 @@ class InterviewSessionSerializer(serializers.ModelSerializer):
         if not obj or not hasattr(obj, 'id'):
             return 0
         try:
-            # Check if answers table exists before querying
-            from django.db import connection
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='answers'")
-                if not cursor.fetchone():
-                    return 0
-            
-            # Return actual answer count
             return obj.answers.count()
         except Exception:
             return 0
@@ -433,6 +410,7 @@ class AnswerCreateSerializer(serializers.ModelSerializer):
 class AdminQuestionSerializer(serializers.ModelSerializer):
     """Admin serializer for Question with full details"""
     topic_name = serializers.SerializerMethodField()
+    round_name = serializers.SerializerMethodField()
     answer_count = serializers.SerializerMethodField()
     reference_links_list = serializers.SerializerMethodField()
     source_type_display = serializers.SerializerMethodField()
@@ -440,7 +418,7 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Question
         fields = [
-            'id', 'topic', 'topic_name', 'source_type', 'source_type_display',
+            'id', 'topic', 'topic_name', 'round', 'round_name', 'source_type', 'source_type_display',
             'question_text', 'ideal_answer', 'difficulty', 'is_active', 
             'reference_links', 'reference_links_list', 'answer_count', 
             'created_at', 'updated_at'
@@ -453,6 +431,7 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
             'question_text': {'required': False, 'allow_blank': True, 'allow_null': True},
             'ideal_answer': {'required': False, 'allow_blank': True, 'allow_null': True},
             'reference_links': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'round': {'required': False, 'allow_null': True}
         }
     
     def get_topic_name(self, obj):
@@ -482,12 +461,21 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
         except Exception:
             pass
         return None
+
+    def get_round_name(self, obj):
+        """Get round name safely"""
+        if obj and obj.round:
+            return obj.round.name
+        return None
     
     def get_answer_count(self, obj):
         """Get answer count"""
         if not obj:
             return 0
         try:
+            if hasattr(obj, 'answer_count'):
+                return obj.answer_count
+            
             if hasattr(obj, 'answers'):
                 try:
                     return obj.answers.count()
@@ -608,7 +596,7 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
         """Override create to handle validation errors gracefully"""
         try:
             # Import Topic at the top of the method
-            from .models import Topic
+            from .models import Topic, Round
             
             # Handle topic - it might be an ID or a Topic object
             topic = validated_data.get('topic')
@@ -625,6 +613,16 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
             # If it's already a Topic object, keep it
             elif not isinstance(topic, Topic):
                 raise serializers.ValidationError({'topic': 'Invalid topic provided. Expected topic ID (integer).'})
+            
+            # Handle round if present
+            round_data = validated_data.get('round')
+            if round_data:
+                if isinstance(round_data, int):
+                    try:
+                        round_obj = Round.objects.get(id=round_data)
+                        validated_data['round'] = round_obj
+                    except Round.DoesNotExist:
+                        raise serializers.ValidationError({'round': f'Round with id {round_data} does not exist.'})
             
             # Ensure source_type has a default
             if 'source_type' not in validated_data or not validated_data['source_type']:

@@ -7,14 +7,14 @@ from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.conf import settings
 
-from .models import UserProfile, Topic, Question, InterviewSession, Answer
+from .models import UserProfile, Topic, Question, InterviewSession, Answer, Round
 from .serializers import (
     UserProfileSerializer, UserProfileCreateSerializer, UserLoginSerializer,
     TopicSerializer, QuestionSerializer,
     InterviewSessionSerializer, InterviewSessionCreateSerializer,
     AnswerSerializer, AnswerCreateSerializer,
     AdminQuestionSerializer, AdminInterviewSessionSerializer,
-    AdminStatsSerializer
+    AdminStatsSerializer, RoundSerializer
 )
 from .utils.evaluation import evaluate_answer
 
@@ -134,10 +134,34 @@ class TopicViewSet(viewsets.ReadOnlyModelViewSet):
 
 class AdminTopicViewSet(viewsets.ModelViewSet):
     """Admin ViewSet for managing Topics"""
-    queryset = Topic.objects.all()
+    queryset = Topic.objects.annotate(
+        question_count=Count('questions', filter=Q(questions__is_active=True))
+    )
     serializer_class = TopicSerializer
     permission_classes = [DevAdminPermission]
     pagination_class = None
+
+
+class AdminRoundViewSet(viewsets.ModelViewSet):
+    """Admin ViewSet for managing Rounds"""
+    queryset = Round.objects.annotate(
+        question_count=Count('questions', filter=Q(questions__is_active=True))
+    )
+    serializer_class = RoundSerializer
+    permission_classes = [DevAdminPermission]
+    pagination_class = None
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        topic_id = self.request.query_params.get('topic_id')
+        level = self.request.query_params.get('level')
+        
+        if topic_id:
+            queryset = queryset.filter(topic_id=topic_id)
+        if level:
+            queryset = queryset.filter(level=level)
+            
+        return queryset
 
 
 class QuestionViewSet(viewsets.ReadOnlyModelViewSet):
@@ -151,14 +175,17 @@ class QuestionViewSet(viewsets.ReadOnlyModelViewSet):
         # Only return MANUAL questions - exclude LINK type (they're just placeholders)
         queryset = super().get_queryset().filter(source_type='MANUAL')
         topic_id = self.request.query_params.get('topic_id')
+        round_id = self.request.query_params.get('round_id')
         difficulty = self.request.query_params.get('difficulty')
         
         if topic_id:
             queryset = queryset.filter(topic_id=topic_id)
+        if round_id:
+            queryset = queryset.filter(round_id=round_id)
         if difficulty:
             queryset = queryset.filter(difficulty=difficulty)
         
-        return queryset.select_related('topic')
+        return queryset.select_related('topic', 'round')
 
 
 class InterviewSessionViewSet(viewsets.ModelViewSet):
@@ -599,6 +626,8 @@ class AnswerViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             else:
+                import traceback
+                traceback.print_exc()
                 return Response(
                     {'error': f'Failed to submit answer: {error_msg}'},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -614,12 +643,18 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
     permission_classes = [DevAdminPermission]
     
     def get_queryset(self):
-        queryset = super().get_queryset()
+        # Annotate answer count to avoid N+1 queries
+        queryset = super().get_queryset().annotate(
+            answer_count=Count('answers')
+        )
         topic_id = self.request.query_params.get('topic_id')
+        round_id = self.request.query_params.get('round_id')
         is_active = self.request.query_params.get('is_active')
         
         if topic_id:
             queryset = queryset.filter(topic_id=topic_id)
+        if round_id:
+            queryset = queryset.filter(round_id=round_id)
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active.lower() == 'true')
         
@@ -630,11 +665,11 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
             with connection.cursor() as cursor:
                 cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='answers'")
                 if cursor.fetchone():
-                    return queryset.select_related('topic').prefetch_related('answers')
+                    return queryset.select_related('topic', 'round').prefetch_related('answers')
         except Exception:
             pass
         # Fallback if answers table doesn't exist
-        return queryset.select_related('topic')
+        return queryset.select_related('topic', 'round')
     
     @action(detail=True, methods=['post'], url_path='extract-from-links')
     def extract_from_links(self, request, pk=None):

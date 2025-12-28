@@ -9,7 +9,7 @@ interface UseExamProctoringProps {
 
 export const useExamProctoring = ({ isActive, onBan }: UseExamProctoringProps) => {
     const { toast } = useToast();
-    const [isFullscreen, setIsFullscreen] = useState<boolean>(true); // assume true initially to prevent flickering, corrected by effect
+    const [isFullscreen, setIsFullscreen] = useState<boolean>(() => !!document.fullscreenElement); // Initialize with actual state
     const [tabSwitchCount, setTabSwitchCount] = useState<number>(0);
     const [isBanned, setIsBanned] = useState<boolean>(false);
 
