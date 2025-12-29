@@ -121,7 +121,7 @@ class QuestionSerializer(serializers.ModelSerializer):
         model = Question
         fields = [
             'id', 'topic', 'topic_name', 'round', 'round_name', 'source_type', 'source_type_display',
-            'question_text', 'ideal_answer', 'difficulty', 'is_active', 
+            'question_text', 'ideal_answer', 'is_active', 
             'reference_links', 'reference_links_list', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
@@ -431,13 +431,12 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
         model = Question
         fields = [
             'id', 'topic', 'topic_name', 'round', 'round_name', 'source_type', 'source_type_display',
-            'question_text', 'ideal_answer', 'difficulty', 'is_active', 
+            'question_text', 'ideal_answer', 'is_active', 
             'reference_links', 'reference_links_list', 'answer_count', 
             'created_at', 'updated_at'
         ]
         extra_kwargs = {
             'topic': {'required': True},
-            'difficulty': {'required': False, 'allow_null': True},
             'is_active': {'required': False, 'allow_null': True},
             'source_type': {'required': False, 'allow_null': True, 'allow_blank': True},
             'question_text': {'required': False, 'allow_blank': True, 'allow_null': True},
