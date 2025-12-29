@@ -431,6 +431,31 @@ class InterviewSessionViewSet(viewsets.ModelViewSet):
         data['user'] = user.id
         print(f"[DEBUG] Serializer data: {data}")
         
+        # Enforce enrolled_course restriction
+        if user.enrolled_course:
+            requested_topic_ids = data.get('topic_ids', [])
+            if not isinstance(requested_topic_ids, list):
+                # Handle case where it might be a single value or non-list
+                if requested_topic_ids:
+                    requested_topic_ids = [requested_topic_ids]
+                else:
+                    requested_topic_ids = []
+            
+            # Check if user is trying to access other topics
+            for tid in requested_topic_ids:
+                try:
+                    if int(tid) != user.enrolled_course.id:
+                        return Response(
+                            {'error': f'Access Restriction: You are enrolled in "{user.enrolled_course.name}". You cannot start sessions for other topics.'},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+                except (ValueError, TypeError):
+                    pass
+            
+            # If no topics sent or valid, ensure the enrolled course is enforced 
+            # (though serializer validation requires at least one topic)
+
+        
         serializer = self.get_serializer(data=data)
         
         if not serializer.is_valid():

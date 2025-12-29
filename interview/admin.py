@@ -4,17 +4,21 @@ from .models import UserProfile, Topic, Question, InterviewSession, Answer
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ['username', 'email', 'name', 'is_active', 'access_type', 'has_used_trial', 'created_at']
-    list_filter = ['is_active', 'access_type', 'has_used_trial', 'created_at']
-    search_fields = ['username', 'email', 'name']
-    readonly_fields = ['created_at', 'updated_at', 'password_display']
+    list_display = ['username', 'email', 'name', 'student_id', 'role', 'enrolled_course', 'is_active', 'access_type', 'has_used_trial', 'created_at']
+    list_filter = ['is_active', 'role', 'access_type', 'has_used_trial', 'enrolled_course', 'created_at']
+    search_fields = ['username', 'email', 'name', 'student_id']
+    readonly_fields = ['student_id', 'created_at', 'updated_at', 'password_display']
     fieldsets = (
         ('Authentication', {
             'fields': ('username', 'password', 'is_active'),
             'description': 'Set username and password. Password will be automatically hashed when saved.'
         }),
         ('User Information', {
-            'fields': ('email', 'name')
+            'fields': ('email', 'name', 'student_id', 'role')
+        }),
+        ('Course Enrollment', {
+            'fields': ('enrolled_course',),
+            'description': 'Restrict user to a specific course (Topic).'
         }),
         ('Access Control', {
             'fields': ('access_type', 'has_used_trial'),
