@@ -85,40 +85,37 @@ class UserProfileViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_401_UNAUTHORIZED
             )
             
-        # Log the user in to establish a Django session
         try:
+            # Log the user in to establish a Django session
             from django.contrib.auth import login
             from django.contrib.auth.models import User
             
             # Get or create necessary standard auth user to enable session
-            auth_user, _ = User.objects.get_or_create(username=username)
+            # Use filter().first() instead of get_or_create to avoid some transaction issues
+            auth_user = User.objects.filter(username=username).first()
+            if not auth_user:
+                auth_user = User.objects.create(username=username)
+                
             # We need to set the backend manually to bypass authenticate() since we checked password on UserProfile
             auth_user.backend = 'django.contrib.auth.backends.ModelBackend'
-            login(request, auth_user)
-        except Exception as e:
-            # Catch DB connection errors (OperationalError) or other session issues
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Login session error: {e}")
             
-            # Use specific error message if it's a DB connection issue
-            if 'could not translate host name' in str(e) or 'OperationalError' in str(type(e)):
-                return Response(
-                    {'error': 'Database connection failed. Please check server configuration (DATABASE_URL).'},
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE
-                )
-            # For other errors, we still return success but maybe with a warning?
-            # Or fail? If session isn't created, subsequent requests might fail.
-            # But the frontend stores user info in localStorage too.
-            # Let's return success but log the error, as some stateless parts might still work.
-            # Actually, if login fails, we shouldn't return 200 usually.
-            # But strictly speaking, the user credentials *are* valid here.
-            pass
-        
-        return Response(
-            UserProfileSerializer(user).data,
-            status=status.HTTP_200_OK
-        )
+            try:
+                login(request, auth_user)
+            except Exception as login_error:
+                 # If session login fails, we still return the user profile so the frontend can work (with some features disabled)
+                 print(f"Session login failed: {login_error}")
+            
+            return Response(
+                UserProfileSerializer(user).data,
+                status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response(
+                {'error': f'Login failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     @action(detail=True, methods=['get'], url_path='check-trial')
     def check_trial(self, request, username=None):
