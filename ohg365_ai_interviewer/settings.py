@@ -15,10 +15,10 @@ import dj_database_url
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
-
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(BASE_DIR / '.env')
 
 
 # Quick-start development settings - unsuitable for production
@@ -85,7 +85,7 @@ WSGI_APPLICATION = 'ohg365_ai_interviewer.wsgi.application'
 
 DATABASES = {
     'default': dj_database_url.config(
-        default=os.environ.get('DATABASE_URL') or f'sqlite:///{BASE_DIR / "db.sqlite3"}',
+        default=os.environ.get('DATABASE_URL'),
         conn_max_age=600
     )
 }
