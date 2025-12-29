@@ -9,7 +9,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
         fields = ['id', 'username', 'email', 'name', 'is_active', 'role', 'access_type', 'plain_password', 'has_used_trial', 'student_id', 'enrolled_course', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'enrolled_course', 'student_id']
         extra_kwargs = {
             'password': {'write_only': True}
         }
@@ -36,7 +36,7 @@ class UserProfileCreateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = UserProfile
-        fields = ['username', 'password', 'email', 'name', 'is_active', 'role', 'access_type']
+        fields = ['username', 'password', 'email', 'name', 'is_active', 'role', 'access_type', 'enrolled_course']
     
     def create(self, validated_data):
         password = validated_data.pop('password', None)
@@ -57,6 +57,7 @@ class UserProfileCreateSerializer(serializers.ModelSerializer):
                 is_active=validated_data.get('is_active', True),
                 role=validated_data.get('role', 'USER'),
                 access_type=access_type,
+                enrolled_course=validated_data.get('enrolled_course'),
                 has_used_trial=False
             )
             user.set_password(password)
@@ -675,8 +676,7 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
                 validated_data['ideal_answer'] = ''
             
             # Set defaults
-            if 'difficulty' not in validated_data or not validated_data['difficulty']:
-                validated_data['difficulty'] = 'MEDIUM'
+
             if 'is_active' not in validated_data:
                 validated_data['is_active'] = True
             

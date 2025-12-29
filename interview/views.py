@@ -54,68 +54,104 @@ class UserProfileViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['post'], url_path='login')
     def login(self, request):
-        """
-        Login with username and password.
-        Expects: { "username": "...", "password": "..." }
-        Returns: User profile data if successful
-        """
-        serializer = UserLoginSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        
-        username = serializer.validated_data['username']
-        password = serializer.validated_data['password']
-        
         try:
-            user = UserProfile.objects.get(username=username)
-        except UserProfile.DoesNotExist:
-            return Response(
-                {'error': 'Invalid username or password'},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
-        
-        if not user.is_active:
-            return Response(
-                {'error': 'Account is inactive. Please contact administrator.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        if not user.check_password(password):
-            return Response(
-                {'error': 'Invalid username or password'},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
+            print("--> LOGIN ATTEMPT STARTED")
+            # Log DEBUG info about DB
+            try:
+                print(f"--> DB CONFIG: HOST={settings.DATABASES['default'].get('HOST')}")
+            except Exception:
+                pass
             
-        try:
+            serializer = UserLoginSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            
+            username = serializer.validated_data['username']
+            password = serializer.validated_data['password']
+            
+            print(f"--> CHECKING USERPROFILE: {username}")
+            try:
+                user = UserProfile.objects.get(username=username)
+            except UserProfile.DoesNotExist:
+                print("--> USERPROFILE NOT FOUND")
+                return Response(
+                    {'error': 'Invalid username or password'},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            
+            if not user.is_active:
+                print("--> USER INACTIVE")
+                return Response(
+                    {'error': 'Account is inactive. Please contact administrator.'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            if not user.check_password(password):
+                print("--> PASSWORD MISMATCH")
+                return Response(
+                    {'error': 'Invalid username or password'},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+                
             # Log the user in to establish a Django session
             from django.contrib.auth import login
             from django.contrib.auth.models import User
             
-            # Get or create necessary standard auth user to enable session
-            # Use filter().first() instead of get_or_create to avoid some transaction issues
+            print("--> GETTING DJANGO USER")
+            # Use filter().first() to be safe
             auth_user = User.objects.filter(username=username).first()
             if not auth_user:
+                print("--> CREATING DJANGO USER")
                 auth_user = User.objects.create(username=username)
                 
-            # We need to set the backend manually to bypass authenticate() since we checked password on UserProfile
             auth_user.backend = 'django.contrib.auth.backends.ModelBackend'
             
             try:
+                print("--> ATTEMPTING SESSION LOGIN")
                 login(request, auth_user)
+                print("--> SESSION LOGIN SUCCESS")
             except Exception as login_error:
-                 # If session login fails, we still return the user profile so the frontend can work (with some features disabled)
-                 print(f"Session login failed: {login_error}")
+                 print(f"--> SESSION LOGIN FAILED: {login_error}")
+                 # We continue anyway
             
             return Response(
                 UserProfileSerializer(user).data,
                 status=status.HTTP_200_OK
             )
+            
         except Exception as e:
             import traceback
             traceback.print_exc()
+            # Return DB host in error to help user debug
+            db_host = settings.DATABASES['default'].get('HOST', 'Unknown')
             return Response(
-                {'error': f'Login failed: {str(e)}'},
+                {
+                    'error': f'System Error via Login: {str(e)}', 
+                    'type': str(type(e)),
+                    'db_host_debug': db_host
+                },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    @action(detail=False, methods=['get'], url_path='test-connection')
+    def test_connection(self, request):
+        try:
+            print("--> TESTING DB CONNECTION")
+            user_count = UserProfile.objects.count()
+            db_host = settings.DATABASES['default'].get('HOST', 'Unknown')
+            print(f"--> DB CONNECTION SUCCESS. Count: {user_count}")
+            return Response({
+                'status': 'ok', 
+                'user_count': user_count,
+                'db_host': db_host
+            })
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response({
+                'status': 'error',
+                'error': str(e),
+                'type': str(type(e))
+            }, status=503)
     
     @action(detail=True, methods=['get'], url_path='check-trial')
     def check_trial(self, request, username=None):
@@ -394,6 +430,42 @@ class InterviewSessionViewSet(viewsets.ModelViewSet):
         data = request.data.copy()
         data['user'] = user.id
         print(f"[DEBUG] Serializer data: {data}")
+        
+        # Map topic_ids to topics for serializer
+        if 'topic_ids' in data:
+            data['topics'] = data['topic_ids']
+        
+        # Map round_id to round for serializer
+        if 'round_id' in data:
+            data['round'] = data['round_id']
+
+        # Enforce enrolled_course restriction
+        if user.enrolled_course:
+            requested_topic_ids = data.get('topic_ids', [])
+            if not isinstance(requested_topic_ids, list):
+                # Handle case where it might be a single value or non-list
+                if requested_topic_ids:
+                    requested_topic_ids = [requested_topic_ids]
+                else:
+                    requested_topic_ids = []
+            
+            # Check if user is trying to access other topics
+            for tid in requested_topic_ids:
+                try:
+                    # Access ID securely using getattr just in case enrolled_course is in a weird state
+                    enrolled_id = getattr(user.enrolled_course, 'id', None)
+                    if enrolled_id is not None and int(tid) != enrolled_id:
+                        return Response(
+                            {'error': f'Access Restriction: You are enrolled in "{user.enrolled_course.name}". You cannot start sessions for other topics.'},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+                except (ValueError, TypeError, AttributeError) as e:
+                    print(f"[WARN] Error checking course restriction: {e}")
+                    pass
+            
+            # If no topics sent or valid, ensure the enrolled course is enforced 
+            # (though serializer validation requires at least one topic)
+
         
         serializer = self.get_serializer(data=data)
         
