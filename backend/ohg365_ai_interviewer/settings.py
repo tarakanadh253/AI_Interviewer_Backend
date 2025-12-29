@@ -153,9 +153,10 @@ REST_FRAMEWORK = {
 }
 
 # CORS configuration
+# CORS configuration
 CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:8080,http://localhost:3000,http://127.0.0.1:3000,https://ai-interviewer-backend-f9t5.onrender.com,https://ai-interviewer-ohg.vercel.app').split(',')
 
-CSRF_TRUSTED_ORIGINS = ['https://ai-interviewer-backend-f9t5.onrender.com', 'http://localhost:3000', 'http://127.0.0.1:3000', 'https://ai-interviewer-ohg.vercel.app', 'http://localhost:8080']
+CSRF_TRUSTED_ORIGINS = ['https://ai-interviewer-backend-f9t5.onrender.com', 'http://localhost:3000', 'http://127.0.0.1:3000', 'https://ai-interviewer-ohg.vercel.app', 'http://localhost:8080', 'https://ai-interviewer-ohg.vercel.app']
 
 # Cookie settings for cross-site authentication
 # If running on Render, we need Secure and SameSite=None for cross-origin requests

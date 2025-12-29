@@ -84,8 +84,8 @@ class TopicAdmin(admin.ModelAdmin):
 
 @admin.register(Question)
 class QuestionAdmin(admin.ModelAdmin):
-    list_display = ['question_text_display', 'topic', 'source_type', 'difficulty', 'is_active', 'has_reference_links', 'created_at']
-    list_filter = ['source_type', 'topic', 'difficulty', 'is_active', 'created_at']
+    list_display = ['question_text_display', 'topic', 'source_type', 'is_active', 'has_reference_links', 'created_at']
+    list_filter = ['source_type', 'topic', 'is_active', 'created_at']
     search_fields = ['question_text', 'ideal_answer', 'reference_links']
     readonly_fields = ['created_at', 'updated_at', 'reference_links_preview']
     
@@ -99,7 +99,7 @@ class QuestionAdmin(admin.ModelAdmin):
             'description': 'Choose how to define this question: Manually enter Q&A or provide links to external websites containing questions and answers.'
         }),
         ('Question Details', {
-            'fields': ('topic', 'question_text', 'difficulty', 'is_active'),
+            'fields': ('topic', 'question_text', 'is_active'),
             'description': 'Required if source_type is MANUAL. Question text is optional if using links.'
         }),
         ('Answer (Manual Definition)', {

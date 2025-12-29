@@ -130,7 +130,6 @@ def process_link_question(question_obj) -> int:
                 source_type='MANUAL',  # Extracted questions are now manual
                 question_text=qa['question'],
                 ideal_answer=qa['answer'],
-                difficulty=question_obj.difficulty,
                 is_active=True
             )
             created_count += 1

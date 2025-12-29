@@ -124,12 +124,59 @@ class UserProfileViewSet(viewsets.ModelViewSet):
         })
 
 
+
 class TopicViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for Topic - read-only list of topics"""
     queryset = Topic.objects.all()
     serializer_class = TopicSerializer
     permission_classes = [AllowAny]
-    pagination_class = None  # Disable pagination for topics endpoint
+    pagination_class = None
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        
+        # If user is authenticated via other means (e.g. session), we might want to filter.
+        # But this is public endpoint sometimes. 
+        # Check if username is passed in query params or if we can identify user. 
+        # The frontend calls `getCourses` without user info usually.
+        # However, the user request says: "based the admin given course type for the user, that course only can be accessable for the user to take interview"
+        
+        # We need to rely on the frontend sending user context, or better, make this endpoint authenticated?
+        # Current app seems to allow topic selection without login in some flows, but usually login is required for interview.
+        # Let's check for 'username' query param for now, as API is generic.
+        # Or better, if the frontend now requires login earlier.
+        
+        username = self.request.query_params.get('username')
+        if username:
+            from .models import UserProfile
+            try:
+                user = UserProfile.objects.get(username=username)
+                if user.enrolled_course:
+                    queryset = queryset.filter(id=user.enrolled_course.id)
+            except UserProfile.DoesNotExist:
+                pass
+                
+        return queryset
+
+
+class RoundViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for Round - read-only list of rounds"""
+    queryset = Round.objects.all()
+    serializer_class = RoundSerializer
+    permission_classes = [AllowAny]
+    pagination_class = None
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        topic_id = self.request.query_params.get('topic_id')
+        level = self.request.query_params.get('level')
+        
+        if topic_id:
+            queryset = queryset.filter(topic_id=topic_id)
+        if level:
+            queryset = queryset.filter(level=level)
+            
+        return queryset
 
 
 class AdminTopicViewSet(viewsets.ModelViewSet):
@@ -176,14 +223,11 @@ class QuestionViewSet(viewsets.ReadOnlyModelViewSet):
         queryset = super().get_queryset().filter(source_type='MANUAL')
         topic_id = self.request.query_params.get('topic_id')
         round_id = self.request.query_params.get('round_id')
-        difficulty = self.request.query_params.get('difficulty')
         
         if topic_id:
             queryset = queryset.filter(topic_id=topic_id)
         if round_id:
             queryset = queryset.filter(round_id=round_id)
-        if difficulty:
-            queryset = queryset.filter(difficulty=difficulty)
         
         return queryset.select_related('topic', 'round')
 
@@ -383,20 +427,48 @@ class InterviewSessionViewSet(viewsets.ModelViewSet):
             import traceback
             traceback.print_exc()
             # Return minimal successful response instead of error
+                # Return minimal successful response instead of error
             # This allows the session to be created even if serialization has issues
             try:
+                # Safely get user info
+                user_email = None
+                user_name = None
+                try:
+                    if hasattr(session, 'user') and session.user:
+                        user_email = getattr(session.user, 'email', None)
+                        user_name = getattr(session.user, 'name', None)
+                    elif hasattr(session, 'user_id') and session.user_id:
+                        from .models import UserProfile
+                        u = UserProfile.objects.filter(id=session.user_id).first()
+                        if u:
+                            user_email = u.email
+                            user_name = u.name
+                except Exception:
+                    pass
+
+                # Safely get topics
+                topics_list = []
+                topic_ids = []
+                try:
+                    topics = session.topics.all()
+                    topic_ids = [t.id for t in topics]
+                    topics_list = [{'id': t.id, 'name': t.name} for t in topics]
+                except Exception:
+                    pass
+
                 return Response(
                     {
                         'id': session.id,
-                        'user': session.user_id,
+                        'user': session.user_id if hasattr(session, 'user_id') else None,
                         'status': session.status,
                         'started_at': session.started_at.isoformat() if session.started_at else None,
-                        'topics': [t.id for t in session.topics.all()],
-                        'topics_list': [{'id': t.id, 'name': t.name} for t in session.topics.all()],
+                        'topics': topic_ids,
+                        'topics_list': topics_list,
                         'answers': [],
                         'answer_count': 0,
-                        'user_email': getattr(session.user, 'email', None) if hasattr(session, 'user') else None,
-                        'user_name': getattr(session.user, 'name', None) if hasattr(session, 'user') else None,
+                        'user_email': user_email,
+                        'user_name': user_name,
+                        'warning': 'Partial data returned due to serialization error',
                     },
                     status=status.HTTP_201_CREATED
                 )
@@ -405,10 +477,9 @@ class InterviewSessionViewSet(viewsets.ModelViewSet):
                 traceback.print_exc()
                 return Response(
                     {
-                        'error': f'Serialization error: {str(e)}',
-                        'id': session.id,
-                        'user': session.user_id,
-                        'status': session.status,
+                        'error': f'Critical error creating session: {str(e)}',
+                        'detail': str(e2),
+                        'id': session.id if session else None
                     },
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )

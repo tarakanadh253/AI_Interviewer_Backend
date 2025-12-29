@@ -1,3 +1,4 @@
+
 # Python
 __pycache__/
 *.py[cod]
@@ -33,6 +34,9 @@ db.sqlite3-journal
 /media
 /staticfiles
 
+# Environment Variables
+.env
+
 # IDE
 .vscode/
 .idea/
@@ -43,4 +47,3 @@ db.sqlite3-journal
 # OS
 .DS_Store
 Thumbs.db
-

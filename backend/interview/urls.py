@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     UserProfileViewSet, TopicViewSet, QuestionViewSet,
-    InterviewSessionViewSet, AnswerViewSet,
+    InterviewSessionViewSet, AnswerViewSet, RoundViewSet,
     AdminQuestionViewSet, AdminInterviewSessionViewSet, AdminTopicViewSet,
     AdminUserViewSet, AdminRoundViewSet
 )
@@ -10,6 +10,7 @@ from .views import (
 router = DefaultRouter()
 router.register(r'users', UserProfileViewSet, basename='user')
 router.register(r'topics', TopicViewSet, basename='topic')
+router.register(r'rounds', RoundViewSet, basename='round')
 router.register(r'questions', QuestionViewSet, basename='question')
 router.register(r'sessions', InterviewSessionViewSet, basename='session')
 router.register(r'answers', AnswerViewSet, basename='answer')
