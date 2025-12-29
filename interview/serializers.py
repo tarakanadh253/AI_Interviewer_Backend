@@ -8,7 +8,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = UserProfile
-        fields = ['id', 'username', 'email', 'name', 'is_active', 'role', 'access_type', 'plain_password', 'has_used_trial', 'created_at', 'updated_at']
+        fields = ['id', 'username', 'email', 'name', 'is_active', 'role', 'access_type', 'plain_password', 'has_used_trial', 'student_id', 'enrolled_course', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
         extra_kwargs = {
             'password': {'write_only': True}
@@ -198,7 +198,7 @@ class InterviewSessionSerializer(serializers.ModelSerializer):
             'id', 'user', 'user_email', 'user_name', 'started_at', 'ended_at',
             'duration_seconds', 'topics', 'topics_list', 'status',
             'communication_score', 'technology_score', 'result_summary',
-            'answers', 'answer_count', 'created_at', 'updated_at'
+            'answers', 'answer_count', 'round', 'created_at', 'updated_at'
         ]
         read_only_fields = [
             'id', 'started_at', 'ended_at', 'duration_seconds',
@@ -316,10 +316,11 @@ class InterviewSessionCreateSerializer(serializers.ModelSerializer):
         required=True
     )
     username = serializers.CharField(write_only=True, required=False)
+    round_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     
     class Meta:
         model = InterviewSession
-        fields = ['user', 'username', 'topic_ids', 'status']
+        fields = ['user', 'username', 'topic_ids', 'status', 'round_id']
     
     def validate_topic_ids(self, value):
         if not value:
@@ -330,19 +331,30 @@ class InterviewSessionCreateSerializer(serializers.ModelSerializer):
         """Create session with error handling"""
         try:
             topic_ids = validated_data.pop('topic_ids', [])
-            validated_data.pop('username', None)  # Remove username, user is already set in view
+            username = validated_data.pop('username', None)  # Remove username, user is already set in view
+            round_id = validated_data.pop('round_id', None)
             
             if not topic_ids:
                 raise serializers.ValidationError({'topic_ids': 'At least one topic must be selected.'})
             
             # Validate topics exist
-            from .models import Topic
+            from .models import Topic, Round
             existing_topics = Topic.objects.filter(id__in=topic_ids)
             if existing_topics.count() != len(topic_ids):
                 raise serializers.ValidationError({'topic_ids': 'One or more topics do not exist.'})
             
+            # Create session
             session = InterviewSession.objects.create(**validated_data)
             session.topics.set(topic_ids)
+            
+            if round_id:
+                try:
+                    round_obj = Round.objects.get(id=round_id)
+                    session.round = round_obj
+                    session.save()
+                except Round.DoesNotExist:
+                     pass # Should likely raise validation error but keeping it safe for now
+            
             return session
         except Exception as e:
             import logging

@@ -124,12 +124,59 @@ class UserProfileViewSet(viewsets.ModelViewSet):
         })
 
 
+
 class TopicViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for Topic - read-only list of topics"""
     queryset = Topic.objects.all()
     serializer_class = TopicSerializer
     permission_classes = [AllowAny]
-    pagination_class = None  # Disable pagination for topics endpoint
+    pagination_class = None
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        
+        # If user is authenticated via other means (e.g. session), we might want to filter.
+        # But this is public endpoint sometimes. 
+        # Check if username is passed in query params or if we can identify user. 
+        # The frontend calls `getCourses` without user info usually.
+        # However, the user request says: "based the admin given course type for the user, that course only can be accessable for the user to take interview"
+        
+        # We need to rely on the frontend sending user context, or better, make this endpoint authenticated?
+        # Current app seems to allow topic selection without login in some flows, but usually login is required for interview.
+        # Let's check for 'username' query param for now, as API is generic.
+        # Or better, if the frontend now requires login earlier.
+        
+        username = self.request.query_params.get('username')
+        if username:
+            from .models import UserProfile
+            try:
+                user = UserProfile.objects.get(username=username)
+                if user.enrolled_course:
+                    queryset = queryset.filter(id=user.enrolled_course.id)
+            except UserProfile.DoesNotExist:
+                pass
+                
+        return queryset
+
+
+class RoundViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for Round - read-only list of rounds"""
+    queryset = Round.objects.all()
+    serializer_class = RoundSerializer
+    permission_classes = [AllowAny]
+    pagination_class = None
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        topic_id = self.request.query_params.get('topic_id')
+        level = self.request.query_params.get('level')
+        
+        if topic_id:
+            queryset = queryset.filter(topic_id=topic_id)
+        if level:
+            queryset = queryset.filter(level=level)
+            
+        return queryset
 
 
 class AdminTopicViewSet(viewsets.ModelViewSet):

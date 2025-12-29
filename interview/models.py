@@ -28,12 +28,38 @@ class UserProfile(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    enrolled_course = models.ForeignKey('Topic', on_delete=models.SET_NULL, null=True, blank=True, related_name='students')
+    student_id = models.CharField(max_length=20, unique=True, null=True, blank=True, editable=False)
+
+    def save(self, *args, **kwargs):
+        if not self.student_id:
+            # Generate ID: OHG + Year + 4 digit number
+            today = timezone.now()
+            year = today.year
+            prefix = f"OHG{year}"
+            
+            # Find last student_id for this year
+            last_student = UserProfile.objects.filter(student_id__startswith=prefix).order_by('-student_id').first()
+            
+            if last_student and last_student.student_id:
+                try:
+                    last_number = int(last_student.student_id[7:]) # OHG2025... -> slice after index 6 (7 chars)
+                    new_number = last_number + 1
+                except ValueError:
+                    new_number = 1
+            else:
+                new_number = 1
+                
+            self.student_id = f"{prefix}{new_number:04d}"
+            
+        super().save(*args, **kwargs)
+
     class Meta:
         db_table = 'user_profiles'
         ordering = ['-created_at']
 
     def __str__(self):
-        return f"{self.username} ({self.email})"
+        return f"{self.username} ({self.student_id})"
     
     def set_password(self, raw_password):
         """Hash and set the password, also store plain text for admin"""
@@ -168,6 +194,7 @@ class InterviewSession(models.Model):
     ]
 
     user = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='sessions')
+    round = models.ForeignKey(Round, on_delete=models.SET_NULL, null=True, blank=True, related_name='sessions')
     started_at = models.DateTimeField(auto_now_add=True)
     ended_at = models.DateTimeField(null=True, blank=True)
     duration_seconds = models.IntegerField(null=True, blank=True)
