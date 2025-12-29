@@ -137,14 +137,7 @@ class Question(models.Model):
         blank=True,
         help_text="Required if source_type is MANUAL. Optional if using links."
     )
-    question_text = models.TextField(
-        blank=True,
-        help_text="Required if source_type is MANUAL. Optional if using links."
-    )
-    ideal_answer = models.TextField(
-        blank=True,
-        help_text="Required if source_type is MANUAL. Optional if using links."
-    )
+
     is_active = models.BooleanField(default=True)
     # Reference links to external websites with questions and answers
     reference_links = models.TextField(

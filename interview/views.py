@@ -7,14 +7,14 @@ from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.conf import settings
 
-from .models import UserProfile, Topic, Question, InterviewSession, Answer
+from .models import UserProfile, Topic, Question, InterviewSession, Answer, Round
 from .serializers import (
     UserProfileSerializer, UserProfileCreateSerializer, UserLoginSerializer,
     TopicSerializer, QuestionSerializer,
     InterviewSessionSerializer, InterviewSessionCreateSerializer,
     AnswerSerializer, AnswerCreateSerializer,
     AdminQuestionSerializer, AdminInterviewSessionSerializer,
-    AdminStatsSerializer
+    AdminStatsSerializer, RoundSerializer
 )
 from .utils.evaluation import evaluate_answer
 
@@ -32,17 +32,10 @@ class DevAdminPermission(BasePermission):
         if not (request.user and request.user.is_authenticated):
             return False
             
-        # Check standard Django staff status
-        if getattr(request.user, 'is_staff', False):
-            return True
-            
-        # Check UserProfile access_type
         try:
-            # Only import here if needed to avoid potential circular imports, 
-            # though it should be fine since models are imported at top
             from .models import UserProfile 
             user_profile = UserProfile.objects.get(username=request.user.username)
-            return user_profile.access_type == 'FULL'
+            return user_profile.role == 'ADMIN'
         except UserProfile.DoesNotExist:
             return False
 
@@ -61,51 +54,104 @@ class UserProfileViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['post'], url_path='login')
     def login(self, request):
-        """
-        Login with username and password.
-        Expects: { "username": "...", "password": "..." }
-        Returns: User profile data if successful
-        """
-        serializer = UserLoginSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        
-        username = serializer.validated_data['username']
-        password = serializer.validated_data['password']
-        
         try:
-            user = UserProfile.objects.get(username=username)
-        except UserProfile.DoesNotExist:
+            print("--> LOGIN ATTEMPT STARTED")
+            # Log DEBUG info about DB
+            try:
+                print(f"--> DB CONFIG: HOST={settings.DATABASES['default'].get('HOST')}")
+            except Exception:
+                pass
+            
+            serializer = UserLoginSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            
+            username = serializer.validated_data['username']
+            password = serializer.validated_data['password']
+            
+            print(f"--> CHECKING USERPROFILE: {username}")
+            try:
+                user = UserProfile.objects.get(username=username)
+            except UserProfile.DoesNotExist:
+                print("--> USERPROFILE NOT FOUND")
+                return Response(
+                    {'error': 'Invalid username or password'},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            
+            if not user.is_active:
+                print("--> USER INACTIVE")
+                return Response(
+                    {'error': 'Account is inactive. Please contact administrator.'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            if not user.check_password(password):
+                print("--> PASSWORD MISMATCH")
+                return Response(
+                    {'error': 'Invalid username or password'},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+                
+            # Log the user in to establish a Django session
+            from django.contrib.auth import login
+            from django.contrib.auth.models import User
+            
+            print("--> GETTING DJANGO USER")
+            # Use filter().first() to be safe
+            auth_user = User.objects.filter(username=username).first()
+            if not auth_user:
+                print("--> CREATING DJANGO USER")
+                auth_user = User.objects.create(username=username)
+                
+            auth_user.backend = 'django.contrib.auth.backends.ModelBackend'
+            
+            try:
+                print("--> ATTEMPTING SESSION LOGIN")
+                login(request, auth_user)
+                print("--> SESSION LOGIN SUCCESS")
+            except Exception as login_error:
+                 print(f"--> SESSION LOGIN FAILED: {login_error}")
+                 # We continue anyway
+            
             return Response(
-                {'error': 'Invalid username or password'},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
-        
-        if not user.is_active:
-            return Response(
-                {'error': 'Account is inactive. Please contact administrator.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        if not user.check_password(password):
-            return Response(
-                {'error': 'Invalid username or password'},
-                status=status.HTTP_401_UNAUTHORIZED
+                UserProfileSerializer(user).data,
+                status=status.HTTP_200_OK
             )
             
-        # Log the user in to establish a Django session
-        from django.contrib.auth import login
-        from django.contrib.auth.models import User
-        
-        # Get or create necessary standard auth user to enable session
-        auth_user, _ = User.objects.get_or_create(username=username)
-        # We need to set the backend manually to bypass authenticate() since we checked password on UserProfile
-        auth_user.backend = 'django.contrib.auth.backends.ModelBackend'
-        login(request, auth_user)
-        
-        return Response(
-            UserProfileSerializer(user).data,
-            status=status.HTTP_200_OK
-        )
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            # Return DB host in error to help user debug
+            db_host = settings.DATABASES['default'].get('HOST', 'Unknown')
+            return Response(
+                {
+                    'error': f'System Error via Login: {str(e)}', 
+                    'type': str(type(e)),
+                    'db_host_debug': db_host
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=False, methods=['get'], url_path='test-connection')
+    def test_connection(self, request):
+        try:
+            print("--> TESTING DB CONNECTION")
+            user_count = UserProfile.objects.count()
+            db_host = settings.DATABASES['default'].get('HOST', 'Unknown')
+            print(f"--> DB CONNECTION SUCCESS. Count: {user_count}")
+            return Response({
+                'status': 'ok', 
+                'user_count': user_count,
+                'db_host': db_host
+            })
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response({
+                'status': 'error',
+                'error': str(e),
+                'type': str(type(e))
+            }, status=503)
     
     @action(detail=True, methods=['get'], url_path='check-trial')
     def check_trial(self, request, username=None):
@@ -115,12 +161,12 @@ class UserProfileViewSet(viewsets.ModelViewSet):
         """
         user = get_object_or_404(UserProfile, username=username)
         
-        # Full access users can always start interviews
-        if user.access_type == 'FULL':
+        # Full access users and Admins can always start interviews
+        if user.role == 'ADMIN' or user.access_type in ['FULL', 'ADMIN']:
             return Response({
                 'has_used_trial': False,
                 'can_start_interview': True,
-                'access_type': 'FULL'
+                'access_type': user.access_type or 'FULL'
             })
         
         # Trial users can only start if they haven't used their trial
@@ -131,20 +177,91 @@ class UserProfileViewSet(viewsets.ModelViewSet):
         })
 
 
+
 class TopicViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for Topic - read-only list of topics"""
     queryset = Topic.objects.all()
     serializer_class = TopicSerializer
     permission_classes = [AllowAny]
-    pagination_class = None  # Disable pagination for topics endpoint
+    pagination_class = None
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        
+        # If user is authenticated via other means (e.g. session), we might want to filter.
+        # But this is public endpoint sometimes. 
+        # Check if username is passed in query params or if we can identify user. 
+        # The frontend calls `getCourses` without user info usually.
+        # However, the user request says: "based the admin given course type for the user, that course only can be accessable for the user to take interview"
+        
+        # We need to rely on the frontend sending user context, or better, make this endpoint authenticated?
+        # Current app seems to allow topic selection without login in some flows, but usually login is required for interview.
+        # Let's check for 'username' query param for now, as API is generic.
+        # Or better, if the frontend now requires login earlier.
+        
+        username = self.request.query_params.get('username')
+        if username:
+            from .models import UserProfile
+            try:
+                user = UserProfile.objects.get(username=username)
+                if user.enrolled_course:
+                    queryset = queryset.filter(id=user.enrolled_course.id)
+            except UserProfile.DoesNotExist:
+                pass
+                
+        return queryset
+
+
+class RoundViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for Round - read-only list of rounds"""
+    queryset = Round.objects.all()
+    serializer_class = RoundSerializer
+    permission_classes = [AllowAny]
+    pagination_class = None
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        topic_id = self.request.query_params.get('topic_id')
+        level = self.request.query_params.get('level')
+        
+        if topic_id:
+            queryset = queryset.filter(topic_id=topic_id)
+        if level:
+            queryset = queryset.filter(level=level)
+            
+        return queryset
 
 
 class AdminTopicViewSet(viewsets.ModelViewSet):
     """Admin ViewSet for managing Topics"""
-    queryset = Topic.objects.all()
+    queryset = Topic.objects.annotate(
+        question_count=Count('questions', filter=Q(questions__is_active=True))
+    )
     serializer_class = TopicSerializer
     permission_classes = [DevAdminPermission]
     pagination_class = None
+
+
+class AdminRoundViewSet(viewsets.ModelViewSet):
+    """Admin ViewSet for managing Rounds"""
+    queryset = Round.objects.annotate(
+        question_count=Count('questions', filter=Q(questions__is_active=True))
+    )
+    serializer_class = RoundSerializer
+    permission_classes = [DevAdminPermission]
+    pagination_class = None
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        topic_id = self.request.query_params.get('topic_id')
+        level = self.request.query_params.get('level')
+        
+        if topic_id:
+            queryset = queryset.filter(topic_id=topic_id)
+        if level:
+            queryset = queryset.filter(level=level)
+            
+        return queryset
 
 
 class QuestionViewSet(viewsets.ReadOnlyModelViewSet):
@@ -158,14 +275,14 @@ class QuestionViewSet(viewsets.ReadOnlyModelViewSet):
         # Only return MANUAL questions - exclude LINK type (they're just placeholders)
         queryset = super().get_queryset().filter(source_type='MANUAL')
         topic_id = self.request.query_params.get('topic_id')
-        difficulty = self.request.query_params.get('difficulty')
+        round_id = self.request.query_params.get('round_id')
         
         if topic_id:
             queryset = queryset.filter(topic_id=topic_id)
-        if difficulty:
-            queryset = queryset.filter(difficulty=difficulty)
+        if round_id:
+            queryset = queryset.filter(round_id=round_id)
         
-        return queryset.select_related('topic')
+        return queryset.select_related('topic', 'round')
 
 
 class InterviewSessionViewSet(viewsets.ModelViewSet):
@@ -363,20 +480,48 @@ class InterviewSessionViewSet(viewsets.ModelViewSet):
             import traceback
             traceback.print_exc()
             # Return minimal successful response instead of error
+                # Return minimal successful response instead of error
             # This allows the session to be created even if serialization has issues
             try:
+                # Safely get user info
+                user_email = None
+                user_name = None
+                try:
+                    if hasattr(session, 'user') and session.user:
+                        user_email = getattr(session.user, 'email', None)
+                        user_name = getattr(session.user, 'name', None)
+                    elif hasattr(session, 'user_id') and session.user_id:
+                        from .models import UserProfile
+                        u = UserProfile.objects.filter(id=session.user_id).first()
+                        if u:
+                            user_email = u.email
+                            user_name = u.name
+                except Exception:
+                    pass
+
+                # Safely get topics
+                topics_list = []
+                topic_ids = []
+                try:
+                    topics = session.topics.all()
+                    topic_ids = [t.id for t in topics]
+                    topics_list = [{'id': t.id, 'name': t.name} for t in topics]
+                except Exception:
+                    pass
+
                 return Response(
                     {
                         'id': session.id,
-                        'user': session.user_id,
+                        'user': session.user_id if hasattr(session, 'user_id') else None,
                         'status': session.status,
                         'started_at': session.started_at.isoformat() if session.started_at else None,
-                        'topics': [t.id for t in session.topics.all()],
-                        'topics_list': [{'id': t.id, 'name': t.name} for t in session.topics.all()],
+                        'topics': topic_ids,
+                        'topics_list': topics_list,
                         'answers': [],
                         'answer_count': 0,
-                        'user_email': getattr(session.user, 'email', None) if hasattr(session, 'user') else None,
-                        'user_name': getattr(session.user, 'name', None) if hasattr(session, 'user') else None,
+                        'user_email': user_email,
+                        'user_name': user_name,
+                        'warning': 'Partial data returned due to serialization error',
                     },
                     status=status.HTTP_201_CREATED
                 )
@@ -385,10 +530,9 @@ class InterviewSessionViewSet(viewsets.ModelViewSet):
                 traceback.print_exc()
                 return Response(
                     {
-                        'error': f'Serialization error: {str(e)}',
-                        'id': session.id,
-                        'user': session.user_id,
-                        'status': session.status,
+                        'error': f'Critical error creating session: {str(e)}',
+                        'detail': str(e2),
+                        'id': session.id if session else None
                     },
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
@@ -606,6 +750,8 @@ class AnswerViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             else:
+                import traceback
+                traceback.print_exc()
                 return Response(
                     {'error': f'Failed to submit answer: {error_msg}'},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -621,12 +767,18 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
     permission_classes = [DevAdminPermission]
     
     def get_queryset(self):
-        queryset = super().get_queryset()
+        # Annotate answer count to avoid N+1 queries
+        queryset = super().get_queryset().annotate(
+            answer_count=Count('answers')
+        )
         topic_id = self.request.query_params.get('topic_id')
+        round_id = self.request.query_params.get('round_id')
         is_active = self.request.query_params.get('is_active')
         
         if topic_id:
             queryset = queryset.filter(topic_id=topic_id)
+        if round_id:
+            queryset = queryset.filter(round_id=round_id)
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active.lower() == 'true')
         
@@ -637,11 +789,11 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
             with connection.cursor() as cursor:
                 cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='answers'")
                 if cursor.fetchone():
-                    return queryset.select_related('topic').prefetch_related('answers')
+                    return queryset.select_related('topic', 'round').prefetch_related('answers')
         except Exception:
             pass
         # Fallback if answers table doesn't exist
-        return queryset.select_related('topic')
+        return queryset.select_related('topic', 'round')
     
     @action(detail=True, methods=['post'], url_path='extract-from-links')
     def extract_from_links(self, request, pk=None):

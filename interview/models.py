@@ -6,6 +6,11 @@ import json
 
 class UserProfile(models.Model):
     """User profile with username/password authentication"""
+    ROLE_CHOICES = [
+        ('ADMIN', 'Administrator'),
+        ('USER', 'User (Student)'),
+    ]
+
     ACCESS_TYPE_CHOICES = [
         ('TRIAL', 'Trial - One Free Interview'),
         ('FULL', 'Full Access - Unlimited Interviews'),
@@ -16,20 +21,49 @@ class UserProfile(models.Model):
     email = models.EmailField()
     name = models.CharField(max_length=255, null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='USER')
     access_type = models.CharField(max_length=10, choices=ACCESS_TYPE_CHOICES, default='TRIAL', null=True, blank=True)
+    plain_password = models.CharField(max_length=128, null=True, blank=True, help_text="Stored for admin visibility (Insecure)")
     has_used_trial = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    enrolled_course = models.ForeignKey('Topic', on_delete=models.SET_NULL, null=True, blank=True, related_name='students')
+    student_id = models.CharField(max_length=20, unique=True, null=True, blank=True, editable=False)
+
+    def save(self, *args, **kwargs):
+        if not self.student_id:
+            # Generate ID: OHG + Year + 4 digit number
+            today = timezone.now()
+            year = today.year
+            prefix = f"OHG{year}"
+            
+            # Find last student_id for this year
+            last_student = UserProfile.objects.filter(student_id__startswith=prefix).order_by('-student_id').first()
+            
+            if last_student and last_student.student_id:
+                try:
+                    last_number = int(last_student.student_id[7:]) # OHG2025... -> slice after index 6 (7 chars)
+                    new_number = last_number + 1
+                except ValueError:
+                    new_number = 1
+            else:
+                new_number = 1
+                
+            self.student_id = f"{prefix}{new_number:04d}"
+            
+        super().save(*args, **kwargs)
 
     class Meta:
         db_table = 'user_profiles'
         ordering = ['-created_at']
 
     def __str__(self):
-        return f"{self.username} ({self.email})"
+        return f"{self.username} ({self.student_id})"
     
     def set_password(self, raw_password):
-        """Hash and set the password"""
+        """Hash and set the password, also store plain text for admin"""
+        self.plain_password = raw_password
         self.password = make_password(raw_password)
     
     def check_password(self, raw_password):
@@ -52,6 +86,28 @@ class Topic(models.Model):
         return self.name
 
 
+class Round(models.Model):
+    """Interview rounds within a topic level"""
+    LEVEL_CHOICES = [
+        ('BEGINNER', 'Beginner'),
+        ('INTERMEDIATE', 'Intermediate'),
+        ('ADVANCED', 'Advanced'),
+    ]
+    
+    topic = models.ForeignKey(Topic, on_delete=models.CASCADE, related_name='rounds')
+    level = models.CharField(max_length=20, choices=LEVEL_CHOICES)
+    name = models.CharField(max_length=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rounds'
+        ordering = ['level', 'name']
+
+    def __str__(self):
+        return f"{self.topic.name} - {self.level} - {self.name}"
+
+
 class Question(models.Model):
     """Interview questions with ideal answers"""
     DIFFICULTY_CHOICES = [
@@ -66,6 +122,7 @@ class Question(models.Model):
     ]
 
     topic = models.ForeignKey(Topic, on_delete=models.CASCADE, related_name='questions')
+    round = models.ForeignKey(Round, on_delete=models.CASCADE, related_name='questions', null=True, blank=True)
     source_type = models.CharField(
         max_length=10, 
         choices=SOURCE_TYPE_CHOICES, 
@@ -80,7 +137,7 @@ class Question(models.Model):
         blank=True,
         help_text="Required if source_type is MANUAL. Optional if using links."
     )
-    difficulty = models.CharField(max_length=10, choices=DIFFICULTY_CHOICES, default='MEDIUM')
+
     is_active = models.BooleanField(default=True)
     # Reference links to external websites with questions and answers
     reference_links = models.TextField(
@@ -93,7 +150,7 @@ class Question(models.Model):
 
     class Meta:
         db_table = 'questions'
-        ordering = ['topic', 'difficulty', 'id']
+        ordering = ['topic', 'id']
 
     def __str__(self):
         return f"{self.topic.name}: {self.question_text[:50]}..."
@@ -137,6 +194,7 @@ class InterviewSession(models.Model):
     ]
 
     user = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='sessions')
+    round = models.ForeignKey(Round, on_delete=models.SET_NULL, null=True, blank=True, related_name='sessions')
     started_at = models.DateTimeField(auto_now_add=True)
     ended_at = models.DateTimeField(null=True, blank=True)
     duration_seconds = models.IntegerField(null=True, blank=True)

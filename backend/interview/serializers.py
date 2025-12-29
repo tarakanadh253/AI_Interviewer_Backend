@@ -675,8 +675,7 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
                 validated_data['ideal_answer'] = ''
             
             # Set defaults
-            if 'difficulty' not in validated_data or not validated_data['difficulty']:
-                validated_data['difficulty'] = 'MEDIUM'
+
             if 'is_active' not in validated_data:
                 validated_data['is_active'] = True
             

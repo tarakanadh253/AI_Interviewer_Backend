@@ -13,6 +13,9 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 import os
 import dj_database_url
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -82,10 +85,16 @@ WSGI_APPLICATION = 'ohg365_ai_interviewer.wsgi.application'
 
 DATABASES = {
     'default': dj_database_url.config(
-        default='sqlite:///' + str(BASE_DIR / 'db.sqlite3'),
+        default=os.environ.get('DATABASE_URL'),
         conn_max_age=600
     )
 }
+
+# Debug: Print DB Host to logs to verify env var is loaded correctly
+try:
+    print(f"--> LOADING SETTINGS: DB Host: {DATABASES['default'].get('HOST', 'Not Set')} Port: {DATABASES['default'].get('PORT', 'Not Set')}")
+except Exception:
+    pass
 
 
 # Password validation
@@ -150,9 +159,10 @@ REST_FRAMEWORK = {
 }
 
 # CORS configuration
-CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000,https://ai-interviewer-backend-f9t5.onrender.com,https://ai-interviewer-ohg.vercel.app').split(',')
+# CORS configuration
+CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:8080,http://localhost:3000,http://127.0.0.1:3000,https://ai-interviewer-backend-f9t5.onrender.com,https://ai-interviewer-ohg.vercel.app').split(',')
 
-CSRF_TRUSTED_ORIGINS = ['https://ai-interviewer-backend-f9t5.onrender.com', 'http://localhost:3000', 'http://127.0.0.1:3000', 'https://ai-interviewer-ohg.vercel.app']
+CSRF_TRUSTED_ORIGINS = ['https://ai-interviewer-backend-f9t5.onrender.com', 'http://localhost:3000', 'http://127.0.0.1:3000', 'https://ai-interviewer-ohg.vercel.app', 'http://localhost:8080', 'https://ai-interviewer-ohg.vercel.app']
 
 # Cookie settings for cross-site authentication
 # If running on Render, we need Secure and SameSite=None for cross-origin requests
