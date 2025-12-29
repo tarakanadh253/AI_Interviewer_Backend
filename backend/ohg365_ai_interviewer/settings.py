@@ -83,12 +83,18 @@ WSGI_APPLICATION = 'ohg365_ai_interviewer.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
-DATABASES = {
     'default': dj_database_url.config(
         default=os.environ.get('DATABASE_URL'),
-        conn_max_age=600
+        conn_max_age=0, # Disable persistent connections to avoid stale DNS/IP issues on PaaS
+        ssl_require=True if os.environ.get('RENDER') else False
     )
 }
+
+# Debug: Print DB configuration (safely)
+if DATABASES['default'].get('HOST'):
+    print(f"Database Configured: Host={DATABASES['default']['HOST']}, User={DATABASES['default'].get('USER', 'Unknown')}")
+else:
+    print("Database Configured: SQLite (or invalid configuration)")
 
 
 # Password validation
