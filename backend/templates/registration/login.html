@@ -1,0 +1,102 @@
+{% extends "admin/login.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" type="text/css" href="{% static "admin/css/custom-admin.css" %}">
+<style>
+    body.login {
+        background: linear-gradient(180deg, hsl(240, 30%, 8%), hsl(240, 35%, 6%));
+        background-attachment: fixed;
+    }
+    
+    #header {
+        background: transparent;
+        border: none;
+        padding: 2rem 0;
+    }
+    
+    #branding h1 {
+        text-align: center;
+    }
+    
+    .admin-logo {
+        align-items: center;
+    }
+    
+    #login-form {
+        background: hsl(240, 25%, 12%);
+        border: 1px solid hsl(240, 20%, 20%);
+        border-radius: 1rem;
+        padding: 2rem;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), 0 0 40px hsl(180 100% 50% / 0.2);
+        max-width: 400px;
+        margin: 2rem auto;
+    }
+    
+    #login-form .form-row {
+        margin-bottom: 1.5rem;
+    }
+    
+    #login-form label {
+        color: hsl(180, 20%, 95%);
+        font-weight: 500;
+        margin-bottom: 0.5rem;
+        display: block;
+    }
+    
+    #login-form input[type=text],
+    #login-form input[type=password] {
+        background: hsl(240, 20%, 18%);
+        border: 1px solid hsl(240, 20%, 20%);
+        color: hsl(180, 20%, 95%);
+        padding: 0.75rem;
+        border-radius: 0.5rem;
+        width: 100%;
+        transition: all 0.3s ease;
+    }
+    
+    #login-form input[type=text]:focus,
+    #login-form input[type=password]:focus {
+        outline: none;
+        border-color: hsl(180, 100%, 50%);
+        box-shadow: 0 0 0 3px rgba(0, 255, 255, 0.1);
+    }
+    
+    #login-form .submit-row {
+        margin-top: 2rem;
+        padding: 0;
+        background: transparent;
+        border: none;
+    }
+    
+    #login-form input[type=submit] {
+        width: 100%;
+        background: hsl(180, 100%, 50%);
+        color: hsl(240, 30%, 8%);
+        border: none;
+        padding: 0.75rem;
+        border-radius: 0.5rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 0 20px hsl(180 100% 50% / 0.5), 0 0 40px hsl(180 100% 50% / 0.3);
+    }
+    
+    #login-form input[type=submit]:hover {
+        background: hsl(280, 80%, 60%);
+        box-shadow: 0 0 20px hsl(280 80% 60% / 0.5), 0 0 40px hsl(280 80% 60% / 0.3);
+        transform: translateY(-2px);
+    }
+    
+    .errornote {
+        background: rgba(255, 0, 0, 0.1);
+        border-left: 4px solid hsl(0, 85%, 60%);
+        color: hsl(0, 85%, 60%);
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+    }
+</style>
+{% endblock %}
