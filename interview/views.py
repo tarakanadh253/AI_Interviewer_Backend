@@ -376,6 +376,7 @@ class InterviewSessionViewSet(viewsets.ModelViewSet):
         
         # Check if user has access
         try:
+            from .models import UserProfile
             user = UserProfile.objects.get(username=username)
             if not user.is_active:
                 return Response(
