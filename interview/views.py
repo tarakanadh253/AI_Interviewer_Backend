@@ -335,13 +335,14 @@ class InterviewSessionViewSet(viewsets.ModelViewSet):
         # Check if answers table exists before prefetching
         try:
             from django.db import connection
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='answers'")
-                if cursor.fetchone():
-                    return queryset.select_related('user').prefetch_related('topics', 'answers', 'answers__question')
-        except Exception:
+            # Use introspection which works on both SQLite and PostgreSQL
+            table_names = connection.introspection.table_names()
+            if 'answers' in table_names:
+                return queryset.select_related('user').prefetch_related('topics', 'answers', 'answers__question')
+        except Exception as e:
+            # safe fallback
             pass
-        # Fallback if answers table doesn't exist
+        # Fallback if answers table doesn't exist or error occurs
         return queryset.select_related('user').prefetch_related('topics')
     
     def retrieve(self, request, *args, **kwargs):
@@ -405,8 +406,8 @@ class InterviewSessionViewSet(viewsets.ModelViewSet):
         except Exception as e:
             # If table doesn't exist, skip the check and proceed
             error_str = str(e).lower()
-            if 'no such table' in error_str:
-                print(f"[DEBUG] interview_sessions table doesn't exist yet, skipping existing session check")
+            if 'no such table' in error_str or 'relation' in error_str and 'does not exist' in error_str:
+                print(f"[DEBUG] interview_sessions table issue, skipping existing session check: {e}")
                 existing_session = None
             else:
                 # Re-raise if it's a different error
@@ -481,14 +482,23 @@ class InterviewSessionViewSet(viewsets.ModelViewSet):
             session = serializer.save(status='IN_PROGRESS')
             print(f"[DEBUG] Session created: {session.id}")
             # Ensure user relationship is loaded for serialization
-            session = InterviewSession.objects.select_related('user').prefetch_related('topics').get(id=session.id)
-            print(f"[DEBUG] Session refreshed with relationships")
+            try:
+                session = InterviewSession.objects.select_related('user').prefetch_related('topics').get(id=session.id)
+                print(f"[DEBUG] Session refreshed with relationships")
+            except Exception as e:
+                print(f"[WARN] Failed to refresh session with relationships: {e}")
+                # Continue with the original session object
+                pass
         except Exception as e:
             print(f"[DEBUG] ERROR creating session: {e}")
             import traceback
             traceback.print_exc()
+            db_host = settings.DATABASES['default'].get('HOST', 'Unknown')
             return Response(
-                {'error': f'Failed to create session: {str(e)}'},
+                {
+                    'error': f'Failed to create session: {str(e)}',
+                    'db_host_debug': db_host
+                },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         
