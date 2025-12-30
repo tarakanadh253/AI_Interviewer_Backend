@@ -18,7 +18,8 @@ from dotenv import load_dotenv
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-load_dotenv(BASE_DIR / '.env')
+env_path = BASE_DIR / '.env'
+load_dotenv(env_path, override=True)
 
 
 # Quick-start development settings - unsuitable for production
@@ -83,12 +84,22 @@ WSGI_APPLICATION = 'ohg365_ai_interviewer.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
+# Database
+# https://docs.djangoproject.com/en/4.2/ref/settings/#databases
+
 DATABASES = {
     'default': dj_database_url.config(
         default=os.environ.get('DATABASE_URL'),
         conn_max_age=600
     )
 }
+
+# Ensure database is configured
+if not DATABASES['default']:
+    import sys
+    print("CRITICAL ERROR: DATABASE_URL environment variable not set. Application cannot start.")
+    # We don't exit here to allow collectstatic etc to run without DB, but runtime will fail.
+
 
 # Debug: Print DB Host to logs to verify env var is loaded correctly
 try:
