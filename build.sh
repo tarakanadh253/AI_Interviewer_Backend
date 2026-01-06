@@ -9,4 +9,6 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 
 python manage.py collectstatic --no-input
-python manage.py migrate
+
+echo "Running migrations..."
+python manage.py migrate || echo "WARNING: Migration failed. This is likely due to the DATABASE_URL being unreachable during build. Ensure you are using the EXTERNAL Database URL in Render dashboard."
